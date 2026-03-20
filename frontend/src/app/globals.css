@@ -1,0 +1,224 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  /* ── Velo Kinetic Precision Design Tokens ── */
+  /* Surface Architecture */
+  --color-velo-bg: #0A0A0C;
+  --color-velo-sidebar: #0F0F13;
+  --color-velo-card: #141418;
+  --color-velo-elevated: #1E1E26;
+
+  /* Primary Accent — Lime */
+  --color-velo-lime: #A3E635;
+  --color-velo-lime-dim: rgba(163, 230, 53, 0.09);
+  --color-velo-lime-bg: rgba(163, 230, 53, 0.15);
+
+  /* Negative — Red */
+  --color-velo-red: #F05252;
+  --color-velo-red-dim: rgba(240, 82, 82, 0.15);
+
+  /* AI — Indigo */
+  --color-velo-indigo: #6366F1;
+  --color-velo-indigo-dim: rgba(99, 102, 241, 0.12);
+
+  /* Web3 — Purple */
+  --color-velo-purple: #8B5CF6;
+  --color-velo-purple-dim: rgba(139, 92, 246, 0.12);
+
+  /* News — Amber */
+  --color-velo-amber: #F59E0B;
+  --color-velo-amber-dim: rgba(245, 158, 11, 0.12);
+
+  /* Text */
+  --color-velo-text-primary: #F0F0F0;
+  --color-velo-text-secondary: #8A8A9A;
+  --color-velo-text-muted: #4A4A5A;
+
+  /* Borders */
+  --color-velo-border: rgba(255, 255, 255, 0.07);
+  --color-velo-border-hover: rgba(255, 255, 255, 0.15);
+
+  /* ── Standard shadcn overrides (dark theme) ── */
+  --color-background: var(--velo-bg);
+  --color-foreground: var(--velo-text-primary);
+  --color-card: var(--velo-card);
+  --color-card-foreground: var(--velo-text-primary);
+  --color-popover: var(--velo-card);
+  --color-popover-foreground: var(--velo-text-primary);
+  --color-primary: var(--velo-lime);
+  --color-primary-foreground: #0A0A0C;
+  --color-secondary: var(--velo-elevated);
+  --color-secondary-foreground: var(--velo-text-primary);
+  --color-muted: var(--velo-elevated);
+  --color-muted-foreground: var(--velo-text-secondary);
+  --color-accent: var(--velo-elevated);
+  --color-accent-foreground: var(--velo-text-primary);
+  --color-destructive: var(--velo-red);
+  --color-destructive-foreground: #fff;
+  --color-border: var(--velo-border);
+  --color-input: var(--velo-border);
+  --color-ring: var(--velo-lime);
+
+  /* Chart */
+  --color-chart-1: var(--velo-lime);
+  --color-chart-2: var(--velo-indigo);
+  --color-chart-3: var(--velo-amber);
+  --color-chart-4: var(--velo-purple);
+  --color-chart-5: var(--velo-red);
+
+  /* Sidebar */
+  --color-sidebar: var(--velo-sidebar);
+  --color-sidebar-foreground: var(--velo-text-primary);
+  --color-sidebar-primary: var(--velo-lime);
+  --color-sidebar-primary-foreground: #0A0A0C;
+  --color-sidebar-accent: var(--velo-lime-dim);
+  --color-sidebar-accent-foreground: var(--velo-lime);
+  --color-sidebar-border: var(--velo-border);
+  --color-sidebar-ring: var(--velo-lime);
+
+  /* Radius */
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+
+  /* Fonts */
+  --font-sans: "Inter", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+  --font-heading: "Inter", system-ui, sans-serif;
+}
+
+:root {
+  /* Velo always dark — no light mode */
+  --background: var(--velo-bg);
+  --foreground: var(--velo-text-primary);
+  --card: var(--velo-card);
+  --card-foreground: var(--velo-text-primary);
+  --popover: var(--velo-card);
+  --popover-foreground: var(--velo-text-primary);
+  --primary: var(--velo-lime);
+  --primary-foreground: #0A0A0C;
+  --secondary: var(--velo-elevated);
+  --secondary-foreground: var(--velo-text-primary);
+  --muted: var(--velo-elevated);
+  --muted-foreground: var(--velo-text-secondary);
+  --accent: var(--velo-elevated);
+  --accent-foreground: var(--velo-text-primary);
+  --destructive: var(--velo-red);
+  --destructive-foreground: #fff;
+  --border: var(--velo-border);
+  --input: var(--velo-border);
+  --ring: var(--velo-lime);
+  --sidebar: var(--velo-sidebar);
+  --sidebar-foreground: var(--velo-text-primary);
+  --sidebar-primary: var(--velo-lime);
+  --sidebar-primary-foreground: #0A0A0C;
+  --sidebar-accent: var(--velo-lime-dim);
+  --sidebar-accent-foreground: var(--velo-lime);
+  --sidebar-border: var(--velo-border);
+  --sidebar-ring: var(--velo-lime);
+  --radius: 0.75rem;
+}
+
+.dark {
+  /* Velo is always dark — same as root */
+  --background: var(--velo-bg);
+  --foreground: var(--velo-text-primary);
+  --card: var(--velo-card);
+  --card-foreground: var(--velo-text-primary);
+  --popover: var(--velo-card);
+  --popover-foreground: var(--velo-text-primary);
+  --primary: var(--velo-lime);
+  --primary-foreground: #0A0A0C;
+  --secondary: var(--velo-elevated);
+  --secondary-foreground: var(--velo-text-primary);
+  --muted: var(--velo-elevated);
+  --muted-foreground: var(--velo-text-secondary);
+  --accent: var(--velo-elevated);
+  --accent-foreground: var(--velo-text-primary);
+  --destructive: var(--velo-red);
+  --destructive-foreground: #fff;
+  --border: var(--velo-border);
+  --input: var(--velo-border);
+  --ring: var(--velo-lime);
+  --sidebar: var(--velo-sidebar);
+  --sidebar-foreground: var(--velo-text-primary);
+  --sidebar-primary: var(--velo-lime);
+  --sidebar-primary-foreground: #0A0A0C;
+  --sidebar-accent: var(--velo-lime-dim);
+  --sidebar-accent-foreground: var(--velo-lime);
+  --sidebar-border: var(--velo-border);
+  --sidebar-ring: var(--velo-lime);
+  --radius: 0.75rem;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-family: var(--font-sans);
+  }
+  html {
+    @apply font-sans scroll-smooth;
+  }
+
+  /* ── Velo Typography ── */
+  /* JetBrains Mono for all numbers, prices, addresses */
+  .velo-mono,
+  [data-velo-mono] {
+    font-family: var(--font-mono);
+  }
+
+  /* Positive / Negative colors */
+  .velo-positive {
+    color: var(--velo-lime);
+  }
+  .velo-negative {
+    color: var(--velo-red);
+  }
+  .velo-ai {
+    color: var(--velo-indigo);
+  }
+  .velo-web3 {
+    color: var(--velo-purple);
+  }
+  .velo-news {
+    color: var(--velo-amber);
+  }
+
+  /* Hide scrollbar but keep functionality */
+  .velo-scrollbar::-webkit-scrollbar {
+    width: 4px;
+    height: 4px;
+  }
+  .velo-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .velo-scrollbar::-webkit-scrollbar-thumb {
+    background: var(--velo-elevated);
+    border-radius: 10px;
+  }
+}
+
+/* ── Material Symbols Outlined ── */
+.material-symbols-outlined {
+  font-variation-settings: "FILL" 0, "wght" 400, "GRAD" 0, "opsz" 24;
+  display: inline-block;
+  line-height: 1;
+  vertical-align: middle;
+}
+
+/* ── Custom scrollbar ── */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--velo-elevated) transparent;
+}
