@@ -1,24 +1,22 @@
 "use client";
 
 import type { NewsItem } from "@/lib/types";
-import { ExternalLink, Clock } from "lucide-react";
+import { Clock, ExternalLink } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface NewsCardProps {
   news: NewsItem;
 }
 
-const CATEGORY_COLORS: Record<string, string> = {
-  ai: "text-velo-indigo bg-velo-indigo/10",
-  tech: "text-velo-lime bg-velo-lime/10",
-  crypto: "text-velo-purple bg-velo-purple/10",
-  stock: "text-velo-amber bg-velo-amber/10",
+const CATEGORY_STYLES: Record<string, { bg: string; text: string; label: string }> = {
+  ai:     { bg: "bg-[#6366F1]/20", text: "text-[#6366F1]", label: "AI" },
+  tech:   { bg: "bg-cyan-500/20",  text: "text-cyan-400",    label: "Tech" },
+  crypto: { bg: "bg-[#F59E0B]/20", text: "text-[#F59E0B]", label: "Crypto" },
+  stock:  { bg: "bg-[#A3E635]/20", text: "text-[#A3E635]", label: "Stock" },
 };
 
 function timeAgo(dateStr: string): string {
-  const now = Date.now();
-  const date = new Date(dateStr).getTime();
-  const diff = Math.floor((now - date) / 1000);
+  const diff = Math.floor((Date.now() - new Date(dateStr).getTime()) / 1000);
   if (diff < 60) return `${diff}s ago`;
   if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
   if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
@@ -26,60 +24,54 @@ function timeAgo(dateStr: string): string {
 }
 
 export function NewsCard({ news }: NewsCardProps) {
-  const catStyle = CATEGORY_COLORS[news.category] ?? "text-[#8A8A9A] bg-[#1E1E26]";
+  const style = CATEGORY_STYLES[news.category] ?? { bg: "bg-[#1E1E26]", text: "text-[#8A8A9A]", label: news.category.toUpperCase() };
 
   return (
     <a
       href={news.url}
       target="_blank"
       rel="noopener noreferrer"
-      className="group block p-5 rounded-xl bg-[#141418] border border-[rgba(255,255,255,0.07)] hover:border-[rgba(255,255,255,0.15)] hover:bg-[#1A1A20] transition-all duration-200"
+      className="group relative block p-5 rounded-xl bg-[#141418] border border-white/[0.07] hover:border-white/[0.15] hover:bg-[#1A1A20] transition-all cursor-pointer h-full flex flex-col"
     >
-      <div className="flex items-start justify-between gap-4">
-        <div className="flex-1 min-w-0">
-          {/* Category + time */}
-          <div className="flex items-center gap-2 mb-2">
-            <span
-              className={cn(
-                "text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded",
-                catStyle
-              )}
-            >
-              {news.category}
-            </span>
-            <span className="text-[#4A4A5A]">·</span>
-            <span className="text-[10px] text-[#4A4A5A] flex items-center gap-1">
-              <Clock size={9} />
-              {timeAgo(news.publishedAt)}
-            </span>
-          </div>
+      {/* Top row */}
+      <div className="flex items-center gap-2 mb-3">
+        <span className={cn("text-[9px] font-bold px-1.5 py-0.5 rounded", style.bg, style.text)}>
+          {style.label}
+        </span>
+        <span className="w-1 h-1 rounded-full bg-[#4A4A5A]" />
+        <span className="text-[11px] text-[#4A4A5A] flex items-center gap-1">
+          <Clock className="w-[11px] h-[11px]" />
+          {timeAgo(news.publishedAt)}
+        </span>
+        <span className="flex-1" />
+        {/* External link icon — shows this opens in new tab */}
+        <span className="text-[#4A4A5A] group-hover:text-[#A3E635] transition-colors">
+          <ExternalLink className="w-3.5 h-3.5" />
+        </span>
+      </div>
 
-          {/* Title */}
-          <h3 className="text-sm font-semibold text-white leading-snug mb-2 group-hover:text-velo-lime transition-colors line-clamp-2">
-            {news.title}
-          </h3>
+      {/* Title */}
+      <h3 className="text-sm font-medium text-[#F0F0F0] leading-relaxed mb-2 flex-1 group-hover:text-[#A3E635] transition-colors line-clamp-2">
+        {news.title}
+      </h3>
 
-          {/* Summary */}
-          <p className="text-xs text-[#8A8A9A] leading-relaxed line-clamp-2">
-            {news.summary}
-          </p>
+      {/* Excerpt */}
+      <p className="text-xs text-[#8A8A9A] leading-relaxed line-clamp-2 mb-3">
+        {news.summary}
+      </p>
 
-          {/* Source */}
-          <div className="mt-3 flex items-center gap-1.5">
-            <span className="text-[10px] text-[#4A4A5A] font-medium">{news.source}</span>
-          </div>
+      {/* Source */}
+      <div className="flex items-center gap-1.5 mt-auto">
+        <div className="w-4 h-4 rounded-sm bg-[#1E1E26] flex items-center justify-center text-[8px] text-[#4A4A5A] font-mono font-bold">
+          {news.source.slice(0, 2).toUpperCase()}
         </div>
-
-        {/* Thumbnail */}
-        {news.imageUrl && (
-          <div className="flex-shrink-0 w-20 h-20 rounded-lg overflow-hidden bg-[#1E1E26]">
-            <img
-              src={news.imageUrl}
-              alt=""
-              className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity"
-            />
-          </div>
-        )}
+        <span className="text-[11px] text-[#4A4A5A]">{news.source}</span>
+        <span className="flex-1" />
+        {/* "Read full article" hint */}
+        <span className="text-[10px] text-[#4A4A5A] group-hover:text-[#A3E635] transition-colors flex items-center gap-0.5">
+          Read full
+          <ExternalLink className="w-[10px] h-[10px]" />
+        </span>
       </div>
     </a>
   );

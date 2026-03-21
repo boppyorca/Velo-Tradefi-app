@@ -4,9 +4,7 @@ import { useState } from "react";
 import { PageHeader } from "@/components/features";
 import { MemecoinCard } from "@/components/features";
 import { Button } from "@/components/ui/button";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Wallet, Plus, ExternalLink, Copy, Check, RefreshCw, Trash2 } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { Wallet, Copy, Check, RefreshCw, Trash2 } from "lucide-react";
 import type { Memecoin } from "@/lib/types";
 
 const MOCK_MEMECOINS: Memecoin[] = [
@@ -21,34 +19,44 @@ const MOCK_MEMECOINS: Memecoin[] = [
   { id: "goat", symbol: "GOAT", name: "Goatseus Maximus", price: 0.8234, change24h: 15.2, marketCap: 823_000_000, volume24h: 290_000_000, image: "" },
 ];
 
+function fmtPrice(p: number) {
+  if (p < 0.0001) return `$${p.toExponential(2)}`;
+  if (p < 0.01) return `$${p.toFixed(6)}`;
+  if (p < 1) return `$${p.toFixed(4)}`;
+  return `$${p.toFixed(2)}`;
+}
+
+function fmtLargeNum(n: number) {
+  if (n >= 1_000_000_000) return `$${(n / 1_000_000_000).toFixed(1)}B`;
+  if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(1)}M`;
+  return `$${n.toFixed(0)}`;
+}
+
 export default function Web3Page() {
   const [walletAddress, setWalletAddress] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [connecting, setConnecting] = useState(false);
   const [watchedCoins, setWatchedCoins] = useState<Set<string>>(new Set(["dogecoin", "pepe", "ai16z"]));
+  const [refreshing, setRefreshing] = useState(false);
 
   async function handleConnect() {
-    if (typeof window === "undefined" || !(window as Window & { ethereum?: { request: (args: { method: string }) => Promise<string[]> } }).ethereum) {
+    if (typeof window === "undefined" || !(window as Window & { ethereum?: unknown }).ethereum) {
       alert("MetaMask not installed");
       return;
     }
     setConnecting(true);
     try {
-      const ethereum = (window as Window & { ethereum?: { request: (args: { method: string }) => Promise<string[]> } }).ethereum;
-      const accounts = await ethereum!.request({ method: "eth_requestAccounts" });
-      if (accounts.length > 0) {
-        setWalletAddress(accounts[0]);
-      }
-    } catch (err) {
-      console.error(err);
+      const eth = (window as Window & { ethereum?: { request: (args: { method: string }) => Promise<string[]> } }).ethereum;
+      const accounts = await eth!.request({ method: "eth_requestAccounts" });
+      if (accounts.length > 0) setWalletAddress(accounts[0]);
+    } catch {
+      // user rejected
     } finally {
       setConnecting(false);
     }
   }
 
-  function handleDisconnect() {
-    setWalletAddress(null);
-  }
+  function handleDisconnect() { setWalletAddress(null); }
 
   function handleCopy() {
     if (walletAddress) {
@@ -56,10 +64,6 @@ export default function Web3Page() {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     }
-  }
-
-  function shortenAddress(addr: string) {
-    return `${addr.slice(0, 6)}...${addr.slice(-4)}`;
   }
 
   function toggleWatch(id: string) {
@@ -71,225 +75,171 @@ export default function Web3Page() {
     });
   }
 
-  return (
-    <div>
-      <PageHeader
-        title="Web3 Wallet"
-        description="MetaMask integration · Memecoin tracking"
-        badge="BETA"
-        badgeColor="purple"
-      />
+  function handleRefresh() {
+    setRefreshing(true);
+    setTimeout(() => setRefreshing(false), 1000);
+  }
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left — Wallet */}
+  return (
+    <div className="space-y-5">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <div className="flex items-center gap-2 mb-1">
+            <span className="bg-[#6366F1]/10 text-[#6366F1] text-[10px] font-bold px-2.5 py-1 rounded-full border border-[#6366F1]/20">
+              BETA
+            </span>
+          </div>
+          <p className="text-xs text-[#4A4A5A]">MetaMask integration · Memecoin tracking</p>
+        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-8 border-white/[0.08] text-xs text-[#8A8A9A] hover:text-white hover:border-white/20"
+          onClick={handleRefresh}
+        >
+          <RefreshCw className={`w-3 h-3 mr-1.5 ${refreshing ? "animate-spin" : ""}`} />
+          Refresh
+        </Button>
+      </div>
+
+      {/* Main content */}
+      <div className="grid grid-cols-3 gap-6">
+        {/* Left column */}
         <div className="space-y-4">
           {/* Wallet card */}
-          <div className="rounded-2xl bg-[#141418] border border-velo-purple/20 p-5">
-            <div className="flex items-center gap-2 mb-4">
-              <div className="w-8 h-8 rounded-lg bg-velo-purple/10 flex items-center justify-center">
-                <Wallet className="w-4 h-4 text-velo-purple" />
-              </div>
-              <h2 className="text-base font-bold text-white">Wallet</h2>
+          <div className="bg-[#141418] border border-white/[0.07] rounded-xl overflow-hidden">
+            <div className="px-5 py-4 border-b border-white/[0.07] flex items-center gap-2">
+              <Wallet className="w-4 h-4 text-[#8B5CF6]" />
+              <h2 className="text-sm font-medium text-[#F0F0F0]">Wallet</h2>
             </div>
-
-            {walletAddress ? (
-              <div className="space-y-4">
-                {/* Connected state */}
-                <div className="p-4 rounded-xl bg-[#0A0A0C] border border-velo-purple/20">
-                  <div className="flex items-center gap-2 mb-2">
-                    <span className="w-2 h-2 bg-velo-lime rounded-full" />
-                    <span className="text-xs font-bold text-velo-lime">CONNECTED</span>
+            <div className="px-5 py-5">
+              {walletAddress ? (
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2 p-3 bg-[#0A0A0C] rounded-lg">
+                    <div className="w-6 h-6 rounded-full bg-[#6366F1]/20 flex items-center justify-center text-[#6366F1] text-xs font-bold">⟠</div>
+                    <span className="text-xs font-mono text-[#F0F0F0] flex-1 truncate">{walletAddress.slice(0, 6)}...{walletAddress.slice(-4)}</span>
+                    <span className="text-[9px] font-bold text-[#A3E635] flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-[#A3E635]" />
+                      CONNECTED
+                    </span>
                   </div>
-                  <p className="text-xs font-mono text-[#8A8A9A] break-all">
-                    {walletAddress}
-                  </p>
+                  {[
+                    { label: "Ethereum ETH", amount: "2.451 ETH", usd: "$4,820.23" },
+                    { label: "USD Coin USDC", amount: "1,250.00", usd: "$1,250.00" },
+                    { label: "BNB Chain BNB", amount: "0.85", usd: "$512.42" },
+                  ].map((row) => (
+                    <div key={row.label} className="flex items-center justify-between p-3 bg-[#0A0A0C] rounded-lg">
+                      <span className="text-xs text-[#8A8A9A]">{row.label}</span>
+                      <div className="text-right">
+                        <p className="text-sm font-mono font-medium text-[#F0F0F0]">{row.amount}</p>
+                        <p className="text-xs text-[#4A4A5A]">{row.usd}</p>
+                      </div>
+                    </div>
+                  ))}
+                  <div className="flex gap-2">
+                    <Button variant="outline" size="sm" className="flex-1 h-8 border-white/[0.08] text-xs text-[#8A8A9A] hover:text-white" onClick={handleCopy}>
+                      {copied ? <Check className="w-3 h-3 mr-1" /> : <Copy className="w-3 h-3 mr-1" />}
+                      {copied ? "Copied!" : "Copy"}
+                    </Button>
+                    <Button variant="outline" size="sm" className="flex-1 h-8 border-[#F05252]/20 text-[#F05252] hover:bg-[#F05252]/10" onClick={handleDisconnect}>
+                      <Trash2 className="w-3 h-3 mr-1" />
+                      Disconnect
+                    </Button>
+                  </div>
                 </div>
-
-                <div className="space-y-2">
-                  <div className="flex justify-between text-sm">
-                    <span className="text-[#8A8A9A]">Network</span>
-                    <span className="text-white font-medium">Ethereum Mainnet</span>
-                  </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-[#8A8A9A]">ETH Balance</span>
-                    <span className="text-white font-mono font-bold">0.00 ETH</span>
-                  </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-[#8A8A9A]">Tokens</span>
-                    <span className="text-white font-medium">0 ERC-20</span>
-                  </div>
-                </div>
-
-                <div className="flex gap-2">
+              ) : (
+                <div className="text-center py-4">
+                  <Wallet className="w-12 h-12 mx-auto mb-3 text-[#4A4A5A]" />
+                  <p className="text-sm font-medium text-[#F0F0F0] mb-1">No wallet connected</p>
+                  <p className="text-xs text-[#4A4A5A] mb-4">Connect your MetaMask to view balances and manage tokens</p>
                   <Button
-                    variant="outline"
-                    size="sm"
-                    className="flex-1 h-8 border-[rgba(255,255,255,0.12)] text-xs text-[#8A8A9A] hover:text-white"
-                    onClick={handleCopy}
+                    className="w-full h-10 bg-[#8B5CF6] hover:bg-[#8B5CF6]/90 text-white font-semibold text-sm"
+                    onClick={handleConnect}
+                    disabled={connecting}
                   >
-                    {copied ? <Check className="w-3 h-3 mr-1" /> : <Copy className="w-3 h-3 mr-1" />}
-                    {copied ? "Copied!" : "Copy"}
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="flex-1 h-8 border-velo-red/20 text-velo-red hover:bg-velo-red/10"
-                    onClick={handleDisconnect}
-                  >
-                    <Trash2 className="w-3 h-3 mr-1" />
-                    Disconnect
+                    <Wallet className="w-4 h-4 mr-2" />
+                    Connect MetaMask
                   </Button>
                 </div>
-              </div>
-            ) : (
-              /* Not connected */
-              <div className="text-center py-6">
-                <div className="w-16 h-16 rounded-2xl bg-velo-purple/10 flex items-center justify-center mx-auto mb-4">
-                  <Wallet className="w-8 h-8 text-velo-purple" />
-                </div>
-                <p className="text-sm text-[#8A8A9A] mb-1">No wallet connected</p>
-                <p className="text-xs text-[#4A4A5A] mb-4">Connect your MetaMask to view balances and manage tokens</p>
-                <Button
-                  className="w-full h-10 bg-velo-purple hover:bg-velo-purple/90 text-white font-semibold text-sm"
-                  onClick={handleConnect}
-                  disabled={connecting}
-                >
-                  {connecting ? (
-                    <>
-                      <RefreshCw className="w-3.5 h-3.5 mr-2 animate-spin" />
-                      Connecting...
-                    </>
-                  ) : (
-                    <>
-                      <Wallet className="w-3.5 h-3.5 mr-2" />
-                      Connect MetaMask
-                    </>
-                  )}
-                </Button>
-              </div>
-            )}
+              )}
+            </div>
           </div>
 
           {/* Watchlist */}
-          <div className="rounded-2xl bg-[#141418] border border-[rgba(255,255,255,0.07)] p-5">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-sm font-bold text-white">Watchlist</h3>
-              <span className="text-xs text-[#4A4A5A]">{watchedCoins.size} coins</span>
+          <div className="bg-[#141418] border border-white/[0.07] rounded-xl overflow-hidden">
+            <div className="px-5 py-4 border-b border-white/[0.07] flex items-center justify-between">
+              <h3 className="text-sm font-medium text-[#F0F0F0]">Watchlist</h3>
+              <span className="text-[10px] text-[#8A8A9A] bg-[#1E1E26] px-2 py-0.5 rounded-full">
+                {watchedCoins.size} coins
+              </span>
             </div>
-            <div className="space-y-2">
+            <div className="px-5 py-3 space-y-1">
               {MOCK_MEMECOINS.filter((c) => watchedCoins.has(c.id)).map((coin) => (
-                <div
-                  key={coin.id}
-                  className="flex items-center justify-between p-2.5 rounded-xl bg-[#1E1E26]"
-                >
-                  <div className="flex items-center gap-2">
-                    <div className="w-6 h-6 rounded-full bg-velo-purple/20 flex items-center justify-center">
-                      <span className="text-[8px] font-black text-velo-purple">{coin.symbol.slice(0, 2)}</span>
-                    </div>
-                    <span className="text-xs font-bold font-mono text-white">{coin.symbol}</span>
+                <div key={coin.id} className="flex items-center gap-2 py-2 px-2 rounded-lg hover:bg-white/[0.03] cursor-pointer">
+                  <div className="w-7 h-7 rounded-full bg-[#2a1a2e] flex items-center justify-center text-[10px] font-mono font-bold text-[#8B5CF6]">
+                    {coin.symbol.slice(0, 2)}
                   </div>
-                  <div className="flex items-center gap-2">
-                    <span className={`text-xs font-mono ${coin.change24h >= 0 ? "text-velo-lime" : "text-velo-red"}`}>
-                      {coin.change24h >= 0 ? "+" : ""}{coin.change24h.toFixed(1)}%
-                    </span>
-                    <button
-                      onClick={() => toggleWatch(coin.id)}
-                      className="text-velo-purple/60 hover:text-velo-purple"
-                    >
-                      <Trash2 className="w-3 h-3" />
-                    </button>
-                  </div>
+                  <span className="text-sm font-mono text-[#F0F0F0] flex-1">{coin.symbol}</span>
+                  <span className={`text-sm font-mono ${coin.change24h >= 0 ? "text-[#A3E635]" : "text-[#F05252]"}`}>
+                    {coin.change24h >= 0 ? "+" : ""}{coin.change24h.toFixed(1)}%
+                  </span>
+                  <button
+                    onClick={() => toggleWatch(coin.id)}
+                    className="text-[#4A4A5A] hover:text-[#F05252] cursor-pointer p-1"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
                 </div>
               ))}
               {watchedCoins.size === 0 && (
-                <p className="text-xs text-[#4A4A5A] text-center py-4">
-                  No coins in watchlist. Track memecoins to add them here.
-                </p>
+                <p className="text-xs text-[#4A4A5A] text-center py-4">No coins in watchlist</p>
               )}
             </div>
           </div>
         </div>
 
-        {/* Right — Memecoin list */}
-        <div className="lg:col-span-2">
-          <Tabs defaultValue="trending" className="space-y-4">
-            <div className="flex items-center justify-between">
-              <TabsList className="bg-[#141418] border border-[rgba(255,255,255,0.07)] h-9 p-1 gap-1">
-                <TabsTrigger
-                  value="trending"
-                  className="data-[state=active]:bg-velo-purple data-[state=active]:text-white data-[state=active]:font-bold text-xs h-7"
+        {/* Right column */}
+        <div className="col-span-2 space-y-4">
+          {/* Filter bar */}
+          <div className="flex items-center justify-between">
+            <div className="flex gap-1 bg-[#141418] border border-white/[0.07] rounded-lg p-1">
+              {(["trending", "gainers", "losers"] as const).map((tab) => (
+                <button
+                  key={tab}
+                  className="px-3 py-1.5 text-xs font-medium rounded-md transition-colors text-[#8A8A9A] hover:text-[#F0F0F0]"
                 >
-                  Trending
-                </TabsTrigger>
-                <TabsTrigger
-                  value="gainers"
-                  className="data-[state=active]:bg-velo-lime data-[state=active]:text-[#0A0A0C data-[state=active]:font-bold text-xs h-7"
-                >
-                  Top Gainers
-                </TabsTrigger>
-                <TabsTrigger
-                  value="losers"
-                  className="data-[state=active]:bg-velo-red data-[state=active]:text-white data-[state=active]:font-bold text-xs h-7"
-                >
-                  Top Losers
-                </TabsTrigger>
-              </TabsList>
-
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-8 border-[rgba(255,255,255,0.12)] text-xs text-[#8A8A9A] hover:text-white"
-              >
-                <RefreshCw className="w-3 h-3 mr-1.5" />
-                Refresh
-              </Button>
+                  {tab === "trending" ? "Trending" : tab === "gainers" ? "Top Gainers" : "Top Losers"}
+                </button>
+              ))}
             </div>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 border-white/[0.08] text-xs text-[#8A8A9A] hover:text-white hover:border-white/20"
+              onClick={handleRefresh}
+            >
+              <RefreshCw className={`w-3 h-3 mr-1.5 ${refreshing ? "animate-spin" : ""}`} />
+            </Button>
+          </div>
 
-            <TabsContent value="trending">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                {[...MOCK_MEMECOINS]
-                  .sort((a, b) => b.marketCap - a.marketCap)
-                  .map((coin) => (
-                    <MemecoinCard
-                      key={coin.id}
-                      coin={coin}
-                      isWatched={watchedCoins.has(coin.id)}
-                      onToggleWatchlist={toggleWatch}
-                    />
-                  ))}
-              </div>
-            </TabsContent>
-
-            <TabsContent value="gainers">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                {[...MOCK_MEMECOINS]
-                  .sort((a, b) => b.change24h - a.change24h)
-                  .map((coin) => (
-                    <MemecoinCard
-                      key={coin.id}
-                      coin={coin}
-                      isWatched={watchedCoins.has(coin.id)}
-                      onToggleWatchlist={toggleWatch}
-                    />
-                  ))}
-              </div>
-            </TabsContent>
-
-            <TabsContent value="losers">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                {[...MOCK_MEMECOINS]
-                  .sort((a, b) => a.change24h - b.change24h)
-                  .map((coin) => (
-                    <MemecoinCard
-                      key={coin.id}
-                      coin={coin}
-                      isWatched={watchedCoins.has(coin.id)}
-                      onToggleWatchlist={toggleWatch}
-                    />
-                  ))}
-              </div>
-            </TabsContent>
-          </Tabs>
+          {/* Memecoin grid */}
+          <div className="grid grid-cols-2 gap-3">
+            {MOCK_MEMECOINS.sort((a, b) => b.marketCap - a.marketCap).map((coin) => (
+              <MemecoinCard
+                key={coin.id}
+                symbol={coin.symbol}
+                name={coin.name}
+                price={fmtPrice(coin.price)}
+                change={`${coin.change24h >= 0 ? "+" : ""}${coin.change24h.toFixed(2)}%`}
+                positive={coin.change24h >= 0}
+                mcap={fmtLargeNum(coin.marketCap)}
+                vol={fmtLargeNum(coin.volume24h)}
+                inWatchlist={watchedCoins.has(coin.id)}
+                onToggleWatchlist={() => toggleWatch(coin.id)}
+              />
+            ))}
+          </div>
         </div>
       </div>
     </div>

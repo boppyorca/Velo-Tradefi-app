@@ -21,10 +21,10 @@ export function PriceChange({
   const isNeutral = value === 0;
 
   const colorClass = isNeutral
-    ? "text-[#8A8A9A]"
+    ? "text-velo-text-muted"
     : isPositive
     ? "text-velo-lime"
-    : "text-velo-red";
+    : "text-velo-bearish";
 
   const sizeMap = {
     sm: "text-xs font-mono",

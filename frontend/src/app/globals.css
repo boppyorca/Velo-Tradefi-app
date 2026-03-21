@@ -5,42 +5,46 @@
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
-  /* ── Velo Kinetic Precision Design Tokens ── */
-  /* Surface Architecture */
-  --color-velo-bg: #0A0A0C;
-  --color-velo-sidebar: #0F0F13;
-  --color-velo-card: #141418;
-  --color-velo-elevated: #1E1E26;
+  /* ── Velo Terminal Refined (tradex-inspired: deep charcoal + electric accent) ── */
+  /* Surfaces — deeper, less blue-gray */
+  --color-velo-bg: #0a0a0a;
+  --color-velo-sidebar: #0c0c0e;
+  --color-velo-card: #121214;
+  --color-velo-elevated: #18181b;
 
-  /* Primary Accent — Lime */
-  --color-velo-lime: #A3E635;
-  --color-velo-lime-dim: rgba(163, 230, 53, 0.09);
-  --color-velo-lime-bg: rgba(163, 230, 53, 0.15);
+  /* Primary accent — electric lime (chỉ dùng cho CTA / + / live) */
+  --color-velo-lime: #a3e635;
+  --color-velo-lime-dim: rgba(163, 230, 53, 0.06);
+  --color-velo-lime-bg: rgba(163, 230, 53, 0.12);
 
-  /* Negative — Red */
-  --color-velo-red: #F05252;
-  --color-velo-red-dim: rgba(240, 82, 82, 0.15);
+  /* Bearish / down — violet (thay vì đỏ gắt cho biến động giá) */
+  --color-velo-bearish: #a78bfa;
+  --color-velo-bearish-dim: rgba(167, 139, 250, 0.12);
+
+  /* Alerts / destructive — red giữ cho lỗi & logout */
+  --color-velo-red: #f87171;
+  --color-velo-red-dim: rgba(248, 113, 113, 0.12);
 
   /* AI — Indigo */
-  --color-velo-indigo: #6366F1;
-  --color-velo-indigo-dim: rgba(99, 102, 241, 0.12);
+  --color-velo-indigo: #818cf8;
+  --color-velo-indigo-dim: rgba(129, 140, 248, 0.1);
 
   /* Web3 — Purple */
-  --color-velo-purple: #8B5CF6;
-  --color-velo-purple-dim: rgba(139, 92, 246, 0.12);
+  --color-velo-purple: #a78bfa;
+  --color-velo-purple-dim: rgba(167, 139, 250, 0.1);
 
   /* News — Amber */
-  --color-velo-amber: #F59E0B;
-  --color-velo-amber-dim: rgba(245, 158, 11, 0.12);
+  --color-velo-amber: #fbbf24;
+  --color-velo-amber-dim: rgba(251, 191, 36, 0.1);
 
-  /* Text */
-  --color-velo-text-primary: #F0F0F0;
-  --color-velo-text-secondary: #8A8A9A;
-  --color-velo-text-muted: #4A4A5A;
+  /* Text — hierarchy rõ hơn với contrast tốt hơn */
+  --color-velo-text-primary: #ffffff;
+  --color-velo-text-secondary: #d4d4d8;
+  --color-velo-text-muted: #a1a1aa;
 
-  /* Borders */
-  --color-velo-border: rgba(255, 255, 255, 0.07);
-  --color-velo-border-hover: rgba(255, 255, 255, 0.15);
+  /* Borders — mảnh hơn, ít “sáng viền” */
+  --color-velo-border: rgba(255, 255, 255, 0.1);
+  --color-velo-border-hover: rgba(255, 255, 255, 0.18);
 
   /* ── Standard shadcn overrides (dark theme) ── */
   --color-background: var(--velo-bg);
@@ -50,7 +54,7 @@
   --color-popover: var(--velo-card);
   --color-popover-foreground: var(--velo-text-primary);
   --color-primary: var(--velo-lime);
-  --color-primary-foreground: #0A0A0C;
+  --color-primary-foreground: #0a0a0a;
   --color-secondary: var(--velo-elevated);
   --color-secondary-foreground: var(--velo-text-primary);
   --color-muted: var(--velo-elevated);
@@ -68,13 +72,13 @@
   --color-chart-2: var(--velo-indigo);
   --color-chart-3: var(--velo-amber);
   --color-chart-4: var(--velo-purple);
-  --color-chart-5: var(--velo-red);
+  --color-chart-5: var(--velo-bearish);
 
   /* Sidebar */
   --color-sidebar: var(--velo-sidebar);
   --color-sidebar-foreground: var(--velo-text-primary);
   --color-sidebar-primary: var(--velo-lime);
-  --color-sidebar-primary-foreground: #0A0A0C;
+  --color-sidebar-primary-foreground: #0a0a0a;
   --color-sidebar-accent: var(--velo-lime-dim);
   --color-sidebar-accent-foreground: var(--velo-lime);
   --color-sidebar-border: var(--velo-border);
@@ -89,10 +93,8 @@
   --radius-3xl: calc(var(--radius) * 2.2);
   --radius-4xl: calc(var(--radius) * 2.6);
 
-  /* Fonts */
-  --font-sans: "Inter", system-ui, sans-serif;
+  --font-sans: ui-sans-serif, system-ui, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, monospace;
-  --font-heading: "Inter", system-ui, sans-serif;
 }
 
 :root {
@@ -104,7 +106,7 @@
   --popover: var(--velo-card);
   --popover-foreground: var(--velo-text-primary);
   --primary: var(--velo-lime);
-  --primary-foreground: #0A0A0C;
+  --primary-foreground: #0a0a0a;
   --secondary: var(--velo-elevated);
   --secondary-foreground: var(--velo-text-primary);
   --muted: var(--velo-elevated);
@@ -119,7 +121,7 @@
   --sidebar: var(--velo-sidebar);
   --sidebar-foreground: var(--velo-text-primary);
   --sidebar-primary: var(--velo-lime);
-  --sidebar-primary-foreground: #0A0A0C;
+  --sidebar-primary-foreground: #0a0a0a;
   --sidebar-accent: var(--velo-lime-dim);
   --sidebar-accent-foreground: var(--velo-lime);
   --sidebar-border: var(--velo-border);
@@ -136,7 +138,7 @@
   --popover: var(--velo-card);
   --popover-foreground: var(--velo-text-primary);
   --primary: var(--velo-lime);
-  --primary-foreground: #0A0A0C;
+  --primary-foreground: #0a0a0a;
   --secondary: var(--velo-elevated);
   --secondary-foreground: var(--velo-text-primary);
   --muted: var(--velo-elevated);
@@ -151,7 +153,7 @@
   --sidebar: var(--velo-sidebar);
   --sidebar-foreground: var(--velo-text-primary);
   --sidebar-primary: var(--velo-lime);
-  --sidebar-primary-foreground: #0A0A0C;
+  --sidebar-primary-foreground: #0a0a0a;
   --sidebar-accent: var(--velo-lime-dim);
   --sidebar-accent-foreground: var(--velo-lime);
   --sidebar-border: var(--velo-border);
@@ -184,6 +186,10 @@
   }
   .velo-negative {
     color: var(--velo-red);
+  }
+  /* Giá / % giảm — violet (terminal pro, ít gắt hơn đỏ) */
+  .velo-down {
+    color: var(--velo-bearish);
   }
   .velo-ai {
     color: var(--velo-indigo);
@@ -220,5 +226,19 @@
 /* ── Custom scrollbar ── */
 * {
   scrollbar-width: thin;
-  scrollbar-color: var(--velo-elevated) transparent;
+  scrollbar-color: rgba(255, 255, 255, 0.1) transparent;
+}
+::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 2px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.2);
 }

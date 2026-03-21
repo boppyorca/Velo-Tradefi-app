@@ -1,7 +1,17 @@
 "use client";
 
 import { useMemo } from "react";
-import { cn } from "@/lib/utils";
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ReferenceLine,
+  ResponsiveContainer,
+  Legend,
+} from "recharts";
 import type { Prediction } from "@/lib/types";
 
 interface PredictionChartProps {
@@ -9,54 +19,62 @@ interface PredictionChartProps {
   height?: number;
 }
 
-export function PredictionChart({
-  prediction,
-  height = 240,
-}: PredictionChartProps) {
-  const { historical, forecast, upperBound, lowerBound } = useMemo(() => {
-    const currentPrice = prediction.currentPrice;
-    const preds = prediction.predictions;
+function formatPrice(v: number, symbol: string): string {
+  const isVN = symbol === "VNM";
+  if (isVN) return `${v.toLocaleString("vi-VN")}`;
+  return `$${v.toFixed(2)}`;
+}
 
-    const historical = [
-      currentPrice * 0.94,
-      currentPrice * 0.96,
-      currentPrice * 0.98,
-      currentPrice * 0.99,
-      currentPrice,
-    ];
+const SYMBOL_BASE: Record<string, number> = {
+  AAPL: 192,
+  NVDA: 135,
+  TSLA: 248,
+  VNM: 78500,
+  MSFT: 415,
+};
 
-    const forecast = preds.map((p) => p.predictedPrice);
-    const all = [...historical, ...forecast];
-    const min = Math.min(...all, ...preds.map((p) => p.lowerBound));
-    const max = Math.max(...all, ...preds.map((p) => p.upperBound));
-    const range = max - min || 1;
+function generateData(symbol: string, prediction: Prediction) {
+  const base = SYMBOL_BASE[symbol] ?? 192;
+  const today = new Date();
+  const data: Array<{
+    date: string;
+    actual: number | null;
+    predicted: number | null;
+  }> = [];
 
-    const upperBound = preds.map((p) => p.upperBound);
-    const lowerBound = preds.map((p) => p.lowerBound);
+  // Historical: 30 days ago → today
+  for (let i = 29; i >= 1; i--) {
+    const d = new Date(today);
+    d.setDate(d.getDate() - i);
+    const price = base * (0.94 + Math.random() * 0.06);
+    data.push({
+      date: d.toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+      actual: price,
+      predicted: null,
+    });
+  }
 
-    const normalize = (v: number) =>
-      height - ((v - min) / range) * height;
+  // Today
+  data.push({
+    date: today.toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+    actual: prediction.currentPrice,
+    predicted: null,
+  });
 
-    return {
-      historical: historical.map((v, i) => ({ x: i, y: normalize(v) })),
-      forecast: forecast.map((v, i) => ({
-        x: historical.length + i,
-        y: normalize(v),
-      })),
-      upperBound: upperBound.map((v, i) => ({
-        x: historical.length + i,
-        y: normalize(v),
-      })),
-      lowerBound: lowerBound.map((v, i) => ({
-        x: historical.length + i,
-        y: normalize(v),
-      })),
-      min,
-      max,
-      range,
-    };
-  }, [prediction, height]);
+  // Predictions: 7 days
+  prediction.predictions.forEach((p) => {
+    const d = new Date(p.date);
+    data.push({
+      date: d.toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+      actual: null,
+      predicted: p.predictedPrice,
+    });
+  });
 
+  return data;
+}
+
+export function PredictionChart({ prediction, height = 280 }: PredictionChartProps) {
   const trendColor =
     prediction.trend === "bullish"
       ? "#A3E635"
@@ -64,107 +82,98 @@ export function PredictionChart({
       ? "#F05252"
       : "#6366F1";
 
-  const polylinePoints = (pts: { x: number; y: number }[]) =>
-    pts.map((p) => `${p.x},${p.y}`).join(" ");
+  const data = useMemo(() => generateData(prediction.symbol, prediction), [prediction]);
 
-  const maxX = historical.length + forecast.length - 1;
+  // Find "today" index
+  const todayIndex = data.findIndex(
+    (d) =>
+      d.actual !== null &&
+      d.predicted === null
+  );
 
   return (
     <div className="relative" style={{ height }}>
-      <svg
-        viewBox={`0 0 ${maxX + 1} ${height}`}
-        className="w-full h-full"
-        preserveAspectRatio="xMidYMid meet"
-      >
-        {/* Grid lines */}
-        {[0.25, 0.5, 0.75].map((r) => {
-          const y = height * r;
-          return (
-            <line
-              key={r}
-              x1="0"
-              x2={maxX + 1}
-              y1={y}
-              y2={y}
-              stroke="rgba(255,255,255,0.04)"
-              strokeWidth="0.5"
-            />
-          );
-        })}
-
-        {/* Confidence band */}
-        <polygon
-          points={[
-            ...upperBound.map((p) => `${p.x},${p.y}`),
-            ...[...lowerBound].reverse().map((p) => `${p.x},${p.y}`),
-          ].join(" ")}
-          fill={trendColor}
-          fillOpacity="0.06"
-        />
-
-        {/* Historical line */}
-        <polyline
-          points={polylinePoints(historical)}
-          fill="none"
-          stroke="rgba(255,255,255,0.2)"
-          strokeWidth="1.5"
-          strokeLinejoin="round"
-        />
-
-        {/* Forecast line */}
-        <polyline
-          points={polylinePoints(forecast)}
-          fill="none"
-          stroke={trendColor}
-          strokeWidth="2"
-          strokeLinejoin="round"
-          strokeDasharray="4 2"
-        />
-
-        {/* Dots */}
-        {forecast.map((p, i) => (
-          <circle
-            key={i}
-            cx={p.x}
-            cy={p.y}
-            r="2.5"
-            fill={trendColor}
-            fillOpacity="0.8"
-          />
-        ))}
-
-        {/* Divider line */}
-        <line
-          x1={historical.length - 0.5}
-          x2={historical.length - 0.5}
-          y1="0"
-          y2={height}
-          stroke="rgba(255,255,255,0.1)"
-          strokeWidth="0.5"
-          strokeDasharray="3 3"
-        />
-      </svg>
-
-      {/* Labels */}
-      <div className="flex justify-between mt-2 text-[10px] text-[#4A4A5A] font-mono">
-        <span>7d ago</span>
-        <span>Today</span>
-        <span>+7d forecast</span>
-      </div>
-
       {/* Confidence badge */}
-      <div className="absolute top-2 right-2 flex items-center gap-1.5 bg-[#141418]/80 backdrop-blur-sm px-2.5 py-1 rounded-lg border border-[rgba(255,255,255,0.08)]">
-        <span
-          className="w-1.5 h-1.5 rounded-full"
-          style={{ backgroundColor: trendColor }}
-        />
+      <div className="absolute top-3 right-3 z-10 flex items-center gap-1.5 bg-[#141418]/80 backdrop-blur-sm px-2.5 py-1 rounded-full border border-white/[0.08]">
+        <span className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ backgroundColor: trendColor }} />
         <span className="text-xs font-mono font-semibold" style={{ color: trendColor }}>
           {(prediction.confidence * 100).toFixed(0)}% conf
         </span>
         <span className="text-[10px] text-[#4A4A5A] uppercase tracking-wider">
-          {prediction.model.toUpperCase()}
+          {prediction.model}
         </span>
       </div>
+
+      <ResponsiveContainer width="100%" height={height}>
+        <LineChart data={data} margin={{ top: 10, right: 16, left: 0, bottom: 0 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" vertical={false} />
+          <XAxis
+            dataKey="date"
+            tick={{ fill: "#4A4A5A", fontSize: 11, fontFamily: "JetBrains Mono, monospace" }}
+            axisLine={{ stroke: "rgba(255,255,255,0.07)" }}
+            tickLine={false}
+            interval={6}
+          />
+          <YAxis
+            tick={{ fill: "#4A4A5A", fontSize: 11, fontFamily: "JetBrains Mono, monospace" }}
+            axisLine={false}
+            tickLine={false}
+            tickFormatter={(v: number) => formatPrice(v, prediction.symbol)}
+            width={72}
+          />
+          <Tooltip
+            contentStyle={{
+              backgroundColor: "#1E1E26",
+              border: "1px solid rgba(255,255,255,0.1)",
+              borderRadius: "8px",
+            }}
+            labelStyle={{ color: "#8A8A9A", fontSize: 11 }}
+            itemStyle={{ fontFamily: "JetBrains Mono, monospace", fontSize: 12 }}
+            formatter={(value: number, name: string) => [
+              formatPrice(value, prediction.symbol),
+              name === "actual" ? "Historical" : "Predicted",
+            ]}
+          />
+
+          {/* Today divider */}
+          {todayIndex > 0 && (
+            <ReferenceLine
+              x={data[todayIndex]?.date}
+              stroke="rgba(255,255,255,0.2)"
+              strokeDasharray="4 4"
+              label={{ value: "Today", fill: "#4A4A5A", fontSize: 10, position: "top" }}
+            />
+          )}
+
+          {/* Historical line */}
+          <Line
+            type="monotone"
+            dataKey="actual"
+            stroke="#8A8A9A"
+            strokeWidth={2}
+            dot={false}
+            connectNulls={false}
+            name="Historical"
+          />
+
+          {/* Predicted line */}
+          <Line
+            type="monotone"
+            dataKey="predicted"
+            stroke={trendColor}
+            strokeWidth={2.5}
+            strokeDasharray="6 3"
+            dot={{ fill: trendColor, r: 3, strokeWidth: 0 }}
+            connectNulls={false}
+            name="Predicted"
+          />
+
+          <Legend
+            iconType="line"
+            wrapperStyle={{ fontSize: 11, color: "#8A8A9A" }}
+          />
+        </LineChart>
+      </ResponsiveContainer>
     </div>
   );
 }
