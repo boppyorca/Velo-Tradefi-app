@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { StockTable } from "@/components/features";
 import { Button } from "@/components/ui/button";
-import { RefreshCw, MagnifyingGlass } from "lucide-react";
+import { RefreshCw } from "lucide-react";
 import { stockApi } from "@/lib/api-client";
 
 export default function MarketsPage() {

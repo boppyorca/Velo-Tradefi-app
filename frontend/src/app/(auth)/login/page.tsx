@@ -67,41 +67,40 @@ export default function LoginPage() {
     setError("");
 
     try {
-      const redirectUrl = `${window.location.origin}/auth/callback`;
-      console.log("🔐 Starting Google OAuth with redirect:", redirectUrl);
-
-      const { data, error: authError } = await supabase.auth.signInWithOAuth({
-        provider: "google",
-        options: {
-          redirectTo: redirectUrl,
-          queryParams: {
-            access_type: "offline",
-            prompt: "consent",
-          },
-        },
-      });
-
-      if (authError) {
-        console.error("❌ OAuth error:", authError);
-        // Handle specific error messages
-        if (authError.message.includes("provider is not enabled")) {
-          setError("Google login is not enabled. Please enable it in Supabase Dashboard → Authentication → Providers → Google");
-        } else if (authError.message.includes("redirect_uri_mismatch")) {
-          setError("Redirect URI mismatch. Check Google Cloud Console → Authorized redirect URIs");
-        } else {
-          setError(authError.message);
-        }
-        setLoading(false);
-        return;
-      }
-
-      console.log("✅ OAuth redirect initiated:", data);
-      // If successful, Supabase will redirect
-      // Don't set loading to false here as we're redirecting
+      // Use backend OAuth endpoint for better error handling and session sync
+      const { authApi } = await import("@/lib/api-client");
+      const oauthData = await authApi.googleOAuthUrl();
+      window.location.href = oauthData.data.url;
     } catch (err) {
-      console.error("❌ Google login error:", err);
-      setError("Google login failed. Please check if Google provider is enabled in Supabase.");
-      setLoading(false);
+      // Fallback: direct Supabase OAuth
+      try {
+        const redirectUrl = `${window.location.origin}/auth/callback`;
+        const { data, error: authError } = await supabase.auth.signInWithOAuth({
+          provider: "google",
+          options: {
+            redirectTo: redirectUrl,
+            queryParams: {
+              access_type: "offline",
+              prompt: "consent",
+            },
+          },
+        });
+
+        if (authError) {
+          if (authError.message.includes("provider is not enabled")) {
+            setError("Google login is not enabled. Please enable it in Supabase Dashboard → Authentication → Providers → Google");
+          } else if (authError.message.includes("redirect_uri_mismatch")) {
+            setError("Redirect URI mismatch. Check Google Cloud Console → Authorized redirect URIs");
+          } else {
+            setError(authError.message);
+          }
+          setLoading(false);
+          return;
+        }
+      } catch {
+        setError("Google login failed. Please check if Google provider is enabled in Supabase.");
+        setLoading(false);
+      }
     }
   }
 

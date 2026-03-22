@@ -2,7 +2,31 @@
 
 import type { AuthResponse, StocksResponse, MemecoinsResponse, NewsResponse, StockQuote, Prediction, Stock, StockHistoryPoint } from "./types";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5000";
+/** True when env points at the usual local Kestrel URL — browser should use /bff proxy instead (same-origin). */
+function isLocalLoopbackApiUrl(url: string): boolean {
+  try {
+    const u = new URL(url);
+    const host = u.hostname.toLowerCase();
+    const port = u.port || (u.protocol === "https:" ? "443" : "80");
+    return (host === "localhost" || host === "127.0.0.1") && port === "5000";
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Browser: use `/bff` → Next.js rewrites to the .NET API (see next.config.ts) unless NEXT_PUBLIC_API_URL is a non-local API.
+ * Server: call the backend directly via BACKEND_INTERNAL_URL or 127.0.0.1:5000.
+ */
+function getApiBase(): string {
+  const configured = process.env.NEXT_PUBLIC_API_URL?.trim()?.replace(/\/$/, "");
+  if (configured && !isLocalLoopbackApiUrl(configured)) return configured;
+  if (typeof window !== "undefined") return "/bff";
+  return (
+    process.env.BACKEND_INTERNAL_URL?.trim().replace(/\/$/, "") ||
+    "http://127.0.0.1:5000"
+  );
+}
 
 /** Normalize API payloads (.NET may send PascalCase; Yahoo decimals as strings) */
 function normalizeStock(raw: unknown): Stock {
@@ -45,7 +69,7 @@ async function request<T>(
     ...options.headers,
   };
 
-  const res = await fetch(`${API_BASE}${endpoint}`, {
+  const res = await fetch(`${getApiBase()}${endpoint}`, {
     ...options,
     headers,
   });
@@ -78,6 +102,17 @@ export const authApi = {
       {},
       token
     ),
+
+  /** Get the Supabase Google OAuth URL from the backend. */
+  googleOAuthUrl: () =>
+    request<{ data: { url: string }; success: boolean }>("/api/auth/google"),
+
+  /** Exchange a Supabase OAuth token for a backend JWT. */
+  exchangeGoogleToken: (accessToken: string) =>
+    request<AuthResponse>("/api/auth/google/exchange", {
+      method: "POST",
+      body: JSON.stringify({ accessToken }),
+    }),
 };
 
 // ── Stocks ─────────────────────────────────────────────────────────────────
@@ -120,12 +155,14 @@ export const stockApi = {
 // ── AI Predictions ──────────────────────────────────────────────────────────
 export const predictionApi = {
   predict: (symbol: string, model?: "lstm" | "prophet") =>
-    request<Prediction>(
+    request<{ data: Prediction; success: boolean }>(
       `/api/predictions/${symbol}${model ? `?model=${model}` : ""}`
     ),
 
   history: (symbol: string) =>
-    request<Prediction[]>(`/api/predictions/${symbol}/history`),
+    request<{ data: Prediction[]; success: boolean }>(
+      `/api/predictions/${symbol}/history`
+    ),
 };
 
 // ── Web3 / Memecoins ────────────────────────────────────────────────────────

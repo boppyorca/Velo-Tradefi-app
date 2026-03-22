@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { TrendingUp, TrendingDown, Star } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -11,6 +12,7 @@ interface MemecoinCardProps {
   positive: boolean;
   mcap: string;
   vol: string;
+  image?: string | null;
   inWatchlist?: boolean;
   onToggleWatchlist?: () => void;
 }
@@ -38,6 +40,7 @@ export function MemecoinCard({
   positive,
   mcap,
   vol,
+  image,
   inWatchlist,
   onToggleWatchlist,
 }: MemecoinCardProps) {
@@ -47,8 +50,12 @@ export function MemecoinCard({
     <div className="bg-[#141418] border border-white/[0.07] rounded-xl p-4 hover:border-white/[0.15] hover:bg-[#1a1a20] transition-all cursor-pointer">
       {/* Top row */}
       <div className="flex items-center gap-2 mb-3">
-        <div className={cn("w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold font-mono flex-shrink-0", colors.bg, colors.text)}>
-          {symbol.slice(0, 2)}
+        <div className={cn("w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold font-mono flex-shrink-0 overflow-hidden", colors.bg)}>
+          {image ? (
+            <Image src={image} alt={symbol} width={36} height={36} className="object-cover w-full h-full" unoptimized />
+          ) : (
+            <span className={colors.text}>{symbol.slice(0, 2)}</span>
+          )}
         </div>
         <div className="flex-1 min-w-0">
           <p className="text-sm font-mono font-bold text-[#F0F0F0]">{symbol}</p>

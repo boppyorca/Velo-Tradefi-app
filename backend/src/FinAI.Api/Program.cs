@@ -1,3 +1,5 @@
+using System.Net;
+using System.Net.Http;
 using System.Text;
 using System.Text.RegularExpressions;
 using FinAI.Core.Interfaces;
@@ -151,7 +153,7 @@ builder.Services.AddHttpClient("SupabaseAuth", client =>
     client.Timeout = TimeSpan.FromSeconds(30);
 });
 
-// ── HTTP Client for Stock/Yahoo Finance ────────────────────────────────
+// ── HTTP Client for Stock/Yahoo Finance ─────────────────────────────────────────
 builder.Services.AddHttpClient("YahooFinance", client =>
 {
     client.Timeout = TimeSpan.FromSeconds(15);
@@ -159,13 +161,44 @@ builder.Services.AddHttpClient("YahooFinance", client =>
     client.DefaultRequestHeaders.Add("Accept", "application/json");
 });
 
+// ── HTTP Client for CoinGecko ────────────────────────────────────────────────────
+builder.Services.AddHttpClient("CoinGecko", client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(20);
+    client.DefaultRequestHeaders.Add("User-Agent", "Mozilla/5.0 (compatible; FinAI/1.0)");
+    client.DefaultRequestHeaders.Add("Accept", "application/json, */*");
+    client.DefaultRequestHeaders.Add("Accept-Encoding", "gzip, deflate, br");
+})
+.ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+{
+    AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate | DecompressionMethods.Brotli,
+    AllowAutoRedirect = true,
+    MaxAutomaticRedirections = 5,
+});
+
+// ── HTTP Client for Python ML Service (LSTM + Prophet) ───────────────────────────
+builder.Services.AddHttpClient("MLService", client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(45);
+    client.DefaultRequestHeaders.Add("User-Agent", "Mozilla/5.0 (compatible; FinAI/1.0)");
+    client.DefaultRequestHeaders.Add("Accept", "application/json");
+});
+
 // ── CORS ─────────────────────────────────────────────────────────────────────
-var allowedOrigins = builder.Configuration["FRONTEND_URL"] ?? "http://localhost:3000";
+var configuredOrigins = (builder.Configuration["FRONTEND_URL"] ?? "http://localhost:3000")
+    .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+var corsOrigins = new HashSet<string>(configuredOrigins, StringComparer.OrdinalIgnoreCase);
+if (builder.Environment.IsDevelopment())
+{
+    corsOrigins.Add("http://localhost:3000");
+    corsOrigins.Add("http://127.0.0.1:3000");
+}
+
 builder.Services.AddCors(options =>
 {
     options.AddDefaultPolicy(policy =>
     {
-        policy.WithOrigins(allowedOrigins)
+        policy.WithOrigins(corsOrigins.ToArray())
               .AllowAnyHeader()
               .AllowAnyMethod()
               .AllowCredentials();
@@ -191,8 +224,21 @@ builder.Services.AddScoped<IStockService>(sp =>
     var logger = sp.GetRequiredService<ILogger<StockService>>();
     return new StockService(http, logger);
 });
-builder.Services.AddScoped<IPredictionService, PredictionService>();
-builder.Services.AddScoped<IMemecoinService, MemecoinService>();
+builder.Services.AddScoped<IPredictionService>(sp =>
+{
+    var httpFactory = sp.GetRequiredService<IHttpClientFactory>();
+    var http = httpFactory.CreateClient("MLService");
+    var logger = sp.GetRequiredService<ILogger<PredictionService>>();
+    var config = sp.GetRequiredService<IConfiguration>();
+    return new PredictionService(http, logger, config);
+});
+builder.Services.AddScoped<IMemecoinService>(sp =>
+{
+    var httpFactory = sp.GetRequiredService<IHttpClientFactory>();
+    var http = httpFactory.CreateClient("CoinGecko");
+    var logger = sp.GetRequiredService<ILogger<MemecoinService>>();
+    return new MemecoinService(http, logger);
+});
 builder.Services.AddScoped<INewsService, NewsService>();
 builder.Services.AddScoped<IWeb3Service, Web3Service>();
 

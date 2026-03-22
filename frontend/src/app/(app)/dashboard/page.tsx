@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useAuthStore } from "@/lib/auth-store";
 import { ShoppingCart, Sparkles, Wallet, Newspaper } from "lucide-react";
 
 const TOP_MOVERS = [
@@ -28,13 +29,18 @@ function todayStr() {
 }
 
 export default function DashboardPage() {
+  const { user } = useAuthStore();
+  const greeting = user?.fullName
+    ? `Welcome back, ${user.fullName.split(" ")[0]}`
+    : "Welcome back, Trader";
+
   return (
     <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold text-[#A3E635]">
-            Welcome back, Trader
+            {greeting}
           </h1>
           <p className="text-sm text-[#8A8A9A] mt-0.5">{todayStr()}</p>
         </div>

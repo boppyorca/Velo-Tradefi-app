@@ -276,6 +276,140 @@ public class AuthController : ControllerBase
         return Ok(new { success = true, message = "Logged out successfully" });
     }
 
+    /// <summary>
+    /// Initiate Google OAuth — returns the Supabase OAuth URL for the frontend to redirect to.
+    /// </summary>
+    [HttpGet("google")]
+    public IActionResult GetGoogleOAuthUrl([FromQuery] string? redirectTo = null)
+    {
+        var supabaseUrl = _config["SUPABASE_URL"];
+        var supabaseAnonKey = _config["SUPABASE_ANON_KEY"];
+
+        if (string.IsNullOrEmpty(supabaseUrl) || string.IsNullOrEmpty(supabaseAnonKey))
+            return BadRequest(new { success = false, message = "Supabase is not configured" });
+
+        var callbackUrl = redirectTo ?? "/dashboard";
+        var url = $"{supabaseUrl}/auth/v1/authorize?provider=google" +
+                   $"&redirect_to={Uri.EscapeDataString(callbackUrl)}" +
+                   $"&scopes=email,profile" +
+                   $"&access_type=offline" +
+                   $"&prompt=consent";
+
+        return Ok(new { data = new { url }, success = true });
+    }
+
+    /// <summary>
+    /// Exchange a Supabase OAuth session token for a backend JWT.
+    /// Called by the frontend after OAuth callback to sync the session.
+    /// </summary>
+    [HttpPost("google/exchange")]
+    public async Task<IActionResult> ExchangeGoogleToken([FromBody] ExchangeTokenRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.AccessToken))
+            return BadRequest(new { success = false, message = "Access token is required" });
+
+        try
+        {
+            var supabaseUrl = _config["SUPABASE_URL"];
+            var supabaseKey = _config["SUPABASE_SERVICE_ROLE_KEY"];
+
+            if (!string.IsNullOrEmpty(supabaseUrl) && !string.IsNullOrEmpty(supabaseKey))
+            {
+                // Validate token with Supabase and extract user info
+                var client = _httpClientFactory.CreateClient("SupabaseAuth");
+                client.DefaultRequestHeaders.Add("apikey", supabaseKey);
+                client.DefaultRequestHeaders.Authorization =
+                    new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", request.AccessToken);
+
+                var userResponse = await client.GetAsync($"{supabaseUrl}/auth/v1/user");
+                if (!userResponse.IsSuccessStatusCode)
+                    return Unauthorized(new { success = false, message = "Invalid or expired token" });
+
+                var supabaseUser = await userResponse.Content.ReadFromJsonAsync<SupabaseUser>();
+                if (supabaseUser is null)
+                    return Unauthorized(new { success = false, message = "Could not retrieve user info" });
+
+                var fullName = supabaseUser.UserMetadata != null &&
+                               supabaseUser.UserMetadata.TryGetValue("full_name", out var fn)
+                    ? fn.GetString() ?? ""
+                    : "";
+
+                // Upsert user in backend DB
+                var email = supabaseUser.Email ?? "";
+                if (!string.IsNullOrEmpty(email) && _userRepository is not null)
+                {
+                    try
+                    {
+                        var existing = await _userRepository.GetByEmailAsync(email.ToLowerInvariant());
+                        if (existing is null)
+                        {
+                            var newUser = new FinAI.Core.Entities.User
+                            {
+                                Id = Guid.NewGuid(),
+                                Email = email.ToLowerInvariant(),
+                                PasswordHash = "",
+                                FullName = fullName,
+                                CreatedAt = DateTime.UtcNow
+                            };
+                            await _userRepository.CreateAsync(newUser);
+                        }
+                        else if (string.IsNullOrEmpty(existing.FullName) && !string.IsNullOrEmpty(fullName))
+                        {
+                            // Update name from Google profile
+                            existing.FullName = fullName;
+                            await _userRepository.UpdateAsync(existing);
+                        }
+                    }
+                    catch { /* Non-critical — user is already authenticated via Supabase */ }
+                }
+
+                // Generate a backend JWT so the API stays authenticated
+                var backendToken = GenerateJwtFromSupabaseUser(supabaseUser.Id!, email, fullName);
+                return Ok(new AuthResponseDto(
+                    Token: backendToken,
+                    User: new UserDto(
+                        Guid.TryParse(supabaseUser.Id, out var uid) ? uid : Guid.NewGuid(),
+                        email,
+                        fullName
+                    )
+                ));
+            }
+
+            return BadRequest(new { success = false, message = "Supabase not configured" });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { success = false, message = "Token exchange failed", error = ex.Message });
+        }
+    }
+
+    private string GenerateJwtFromSupabaseUser(string supabaseId, string email, string fullName)
+    {
+        var jwtSecret = _config["JWT_SECRET_KEY"] ?? "VeloFinAI-SuperSecretKey-32chars-min!";
+        var expiryDays = int.Parse(_config["JWT_EXPIRY_DAYS"] ?? "7");
+
+        var key = new Microsoft.IdentityModel.Tokens.SymmetricSecurityKey(
+            System.Text.Encoding.UTF8.GetBytes(jwtSecret));
+        var credentials = new Microsoft.IdentityModel.Tokens.SigningCredentials(
+            key, Microsoft.IdentityModel.Tokens.SecurityAlgorithms.HmacSha256);
+
+        var claims = new[]
+        {
+            new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.NameIdentifier, supabaseId),
+            new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.Email, email),
+            new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.Name, fullName),
+            new System.Security.Claims.Claim("provider", "google"),
+        };
+
+        var token = new System.IdentityModel.Tokens.Jwt.JwtSecurityToken(
+            claims: claims,
+            expires: DateTime.UtcNow.AddDays(expiryDays),
+            signingCredentials: credentials
+        );
+
+        return new System.IdentityModel.Tokens.Jwt.JwtSecurityTokenHandler().WriteToken(token);
+    }
+
     // ── Helpers ──────────────────────────────────────────────────
 
     private string GenerateJwt(FinAI.Core.Entities.User user)
@@ -333,4 +467,9 @@ internal class SupabaseSession
 public class RefreshTokenRequest
 {
     public string RefreshToken { get; set; } = "";
+}
+
+public class ExchangeTokenRequest
+{
+    public string AccessToken { get; set; } = "";
 }

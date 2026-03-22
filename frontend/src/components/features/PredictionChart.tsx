@@ -129,9 +129,9 @@ export function PredictionChart({ prediction, height = 280 }: PredictionChartPro
             }}
             labelStyle={{ color: "#8A8A9A", fontSize: 11 }}
             itemStyle={{ fontFamily: "JetBrains Mono, monospace", fontSize: 12 }}
-            formatter={(value: number, name: string) => [
-              formatPrice(value, prediction.symbol),
-              name === "actual" ? "Historical" : "Predicted",
+            formatter={(value, name) => [
+              formatPrice(Number(value ?? 0), prediction.symbol),
+              String(name) === "actual" ? "Historical" : "Predicted",
             ]}
           />
 

@@ -1,43 +1,30 @@
 "use client";
 
 import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { Wallet, Copy, Check, RefreshCw, Trash2 } from "lucide-react";
 import { PageHeader } from "@/components/features";
 import { MemecoinCard } from "@/components/features";
 import { Button } from "@/components/ui/button";
-import { Wallet, Copy, Check, RefreshCw, Trash2 } from "lucide-react";
+import { memecoinApi } from "@/lib/api-client";
 import type { Memecoin } from "@/lib/types";
 
-const MOCK_MEMECOINS: Memecoin[] = [
-  { id: "dogecoin", symbol: "DOGE", name: "Dogecoin", price: 0.08214, change24h: 5.2, marketCap: 12_100_000_000, volume24h: 890_000_000, image: "" },
-  { id: "shiba-inu", symbol: "SHIB", name: "Shiba Inu", price: 0.00001234, change24h: -2.1, marketCap: 7_300_000_000, volume24h: 210_000_000, image: "" },
-  { id: "pepe", symbol: "PEPE", name: "Pepe", price: 0.00000421, change24h: 12.4, marketCap: 1_800_000_000, volume24h: 520_000_000, image: "" },
-  { id: "dogwifcoin", symbol: "WIF", name: "dogwifcoin", price: 2.3412, change24h: 8.7, marketCap: 820_000_000, volume24h: 340_000_000, image: "" },
-  { id: "brett", symbol: "BRETT", name: "Brett", price: 0.09231, change24h: 3.1, marketCap: 920_000_000, volume24h: 180_000_000, image: "" },
-  { id: "popcat", symbol: "POPCAT", name: "Popcat", price: 0.7234, change24h: -4.2, marketCap: 680_000_000, volume24h: 95_000_000, image: "" },
-  { id: "floxify", symbol: "FLOKI", name: "FLOKI", price: 0.0001421, change24h: 6.8, marketCap: 1_340_000_000, volume24h: 410_000_000, image: "" },
-  { id: "ai16z", symbol: "AI16Z", name: "ai16z", price: 1.2345, change24h: 21.3, marketCap: 1_230_000_000, volume24h: 620_000_000, image: "" },
-  { id: "goat", symbol: "GOAT", name: "Goatseus Maximus", price: 0.8234, change24h: 15.2, marketCap: 823_000_000, volume24h: 290_000_000, image: "" },
+type SortTab = "trending" | "gainers" | "losers";
+
+const FILTER_TABS: { key: SortTab; label: string }[] = [
+  { key: "trending", label: "Trending" },
+  { key: "gainers", label: "Top Gainers" },
+  { key: "losers", label: "Top Losers" },
 ];
-
-function fmtPrice(p: number) {
-  if (p < 0.0001) return `$${p.toExponential(2)}`;
-  if (p < 0.01) return `$${p.toFixed(6)}`;
-  if (p < 1) return `$${p.toFixed(4)}`;
-  return `$${p.toFixed(2)}`;
-}
-
-function fmtLargeNum(n: number) {
-  if (n >= 1_000_000_000) return `$${(n / 1_000_000_000).toFixed(1)}B`;
-  if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(1)}M`;
-  return `$${n.toFixed(0)}`;
-}
 
 export default function Web3Page() {
   const [walletAddress, setWalletAddress] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [connecting, setConnecting] = useState(false);
-  const [watchedCoins, setWatchedCoins] = useState<Set<string>>(new Set(["dogecoin", "pepe", "ai16z"]));
-  const [refreshing, setRefreshing] = useState(false);
+  const [activeTab, setActiveTab] = useState<SortTab>("trending");
+  const [watchedCoins, setWatchedCoins] = useState<Set<string>>(
+    new Set(["dogecoin", "pepe", "ai16z", "bonk", "goatseus-maximus"])
+  );
 
   async function handleConnect() {
     if (typeof window === "undefined" || !(window as Window & { ethereum?: unknown }).ethereum) {
@@ -75,10 +62,28 @@ export default function Web3Page() {
     });
   }
 
-  function handleRefresh() {
-    setRefreshing(true);
-    setTimeout(() => setRefreshing(false), 1000);
-  }
+  // ── CoinGecko API via backend ─────────────────────────────────────────────────
+  const { data: coins, isLoading, isFetching, error, refetch } = useQuery({
+    queryKey: ["memecoins"],
+    queryFn: () => memecoinApi.list({ pageSize: 50 }).then((r) => r.data ?? []),
+    staleTime: 50_000,
+    refetchInterval: 60_000,
+    retry: 1,
+  });
+
+  const allCoins: Memecoin[] = coins ?? [];
+
+  const displayedCoins = (() => {
+    const sorted = [...allCoins];
+    switch (activeTab) {
+      case "gainers":
+        return sorted.sort((a, b) => b.change24h - a.change24h);
+      case "losers":
+        return sorted.sort((a, b) => a.change24h - b.change24h);
+      default: // trending
+        return sorted.sort((a, b) => b.marketCap - a.marketCap);
+    }
+  })();
 
   return (
     <div className="space-y-5">
@@ -90,15 +95,15 @@ export default function Web3Page() {
               BETA
             </span>
           </div>
-          <p className="text-xs text-[#4A4A5A]">MetaMask integration · Memecoin tracking</p>
+          <p className="text-xs text-[#4A4A5A]">MetaMask integration · Live memecoin prices via CoinGecko</p>
         </div>
         <Button
           variant="outline"
           size="sm"
           className="h-8 border-white/[0.08] text-xs text-[#8A8A9A] hover:text-white hover:border-white/20"
-          onClick={handleRefresh}
+          onClick={() => refetch()}
         >
-          <RefreshCw className={`w-3 h-3 mr-1.5 ${refreshing ? "animate-spin" : ""}`} />
+          <RefreshCw className={`w-3 h-3 mr-1.5 ${isFetching ? "animate-spin" : ""}`} />
           Refresh
         </Button>
       </div>
@@ -175,10 +180,15 @@ export default function Web3Page() {
               </span>
             </div>
             <div className="px-5 py-3 space-y-1">
-              {MOCK_MEMECOINS.filter((c) => watchedCoins.has(c.id)).map((coin) => (
+              {allCoins.filter((c) => watchedCoins.has(c.id)).length === 0 && (
+                <p className="text-xs text-[#4A4A5A] text-center py-4">No coins in watchlist — tap ★ on any coin</p>
+              )}
+              {allCoins.filter((c) => watchedCoins.has(c.id)).map((coin) => (
                 <div key={coin.id} className="flex items-center gap-2 py-2 px-2 rounded-lg hover:bg-white/[0.03] cursor-pointer">
-                  <div className="w-7 h-7 rounded-full bg-[#2a1a2e] flex items-center justify-center text-[10px] font-mono font-bold text-[#8B5CF6]">
-                    {coin.symbol.slice(0, 2)}
+                  <div className="w-7 h-7 rounded-full bg-[#2a1a2e] flex items-center justify-center text-[10px] font-mono font-bold text-[#8B5CF6] overflow-hidden">
+                    {coin.image ? (
+                      <img src={coin.image} alt={coin.symbol} className="w-7 h-7 rounded-full object-cover" />
+                    ) : coin.symbol.slice(0, 2)}
                   </div>
                   <span className="text-sm font-mono text-[#F0F0F0] flex-1">{coin.symbol}</span>
                   <span className={`text-sm font-mono ${coin.change24h >= 0 ? "text-[#A3E635]" : "text-[#F05252]"}`}>
@@ -192,11 +202,15 @@ export default function Web3Page() {
                   </button>
                 </div>
               ))}
-              {watchedCoins.size === 0 && (
-                <p className="text-xs text-[#4A4A5A] text-center py-4">No coins in watchlist</p>
-              )}
             </div>
           </div>
+
+          {/* Error state */}
+          {error && (
+            <div className="p-3 rounded-xl bg-[#F05252]/10 border border-[#F05252]/20 text-xs text-[#F05252]">
+              Could not load memecoins: {error.message}. Start the backend (see README) and refresh; CoinGecko fallbacks apply only after the API responds.
+            </div>
+          )}
         </div>
 
         {/* Right column */}
@@ -204,42 +218,68 @@ export default function Web3Page() {
           {/* Filter bar */}
           <div className="flex items-center justify-between">
             <div className="flex gap-1 bg-[#141418] border border-white/[0.07] rounded-lg p-1">
-              {(["trending", "gainers", "losers"] as const).map((tab) => (
+              {FILTER_TABS.map((tab) => (
                 <button
-                  key={tab}
-                  className="px-3 py-1.5 text-xs font-medium rounded-md transition-colors text-[#8A8A9A] hover:text-[#F0F0F0]"
+                  key={tab.key}
+                  onClick={() => setActiveTab(tab.key)}
+                  className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                    activeTab === tab.key
+                      ? "bg-[#0A0A0C] text-[#F0F0F0] shadow-sm"
+                      : "text-[#8A8A9A] hover:text-[#F0F0F0]"
+                  }`}
                 >
-                  {tab === "trending" ? "Trending" : tab === "gainers" ? "Top Gainers" : "Top Losers"}
+                  {tab.label}
                 </button>
               ))}
             </div>
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-8 border-white/[0.08] text-xs text-[#8A8A9A] hover:text-white hover:border-white/20"
-              onClick={handleRefresh}
-            >
-              <RefreshCw className={`w-3 h-3 mr-1.5 ${refreshing ? "animate-spin" : ""}`} />
-            </Button>
+            <span className="text-[10px] text-[#4A4A5A]">
+              {isLoading ? "Loading…" : `${allCoins.length} coins · via CoinGecko`}
+            </span>
           </div>
 
-          {/* Memecoin grid */}
-          <div className="grid grid-cols-2 gap-3">
-            {MOCK_MEMECOINS.sort((a, b) => b.marketCap - a.marketCap).map((coin) => (
-              <MemecoinCard
-                key={coin.id}
-                symbol={coin.symbol}
-                name={coin.name}
-                price={fmtPrice(coin.price)}
-                change={`${coin.change24h >= 0 ? "+" : ""}${coin.change24h.toFixed(2)}%`}
-                positive={coin.change24h >= 0}
-                mcap={fmtLargeNum(coin.marketCap)}
-                vol={fmtLargeNum(coin.volume24h)}
-                inWatchlist={watchedCoins.has(coin.id)}
-                onToggleWatchlist={() => toggleWatch(coin.id)}
-              />
-            ))}
-          </div>
+          {/* Coin grid */}
+          {isLoading ? (
+            <div className="grid grid-cols-2 gap-3">
+              {Array.from({ length: 8 }).map((_, i) => (
+                <div key={i} className="bg-[#141418] border border-white/[0.07] rounded-xl p-4 animate-pulse">
+                  <div className="flex items-center gap-2 mb-3">
+                    <div className="w-9 h-9 rounded-full bg-[#1E1E26]" />
+                    <div className="flex-1 space-y-1">
+                      <div className="h-3 w-12 bg-[#1E1E26] rounded" />
+                      <div className="h-2 w-16 bg-[#1E1E26] rounded" />
+                    </div>
+                  </div>
+                  <div className="h-5 w-20 bg-[#1E1E26] rounded mb-1" />
+                  <div className="h-4 w-14 bg-[#1E1E26] rounded" />
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 gap-3">
+              {displayedCoins.map((coin) => (
+                <MemecoinCard
+                  key={coin.id}
+                  symbol={coin.symbol}
+                  name={coin.name}
+                  price={coin.price < 0.0001 ? `$${coin.price.toExponential(2)}` :
+                         coin.price < 0.01   ? `$${coin.price.toFixed(6)}` :
+                         coin.price < 1       ? `$${coin.price.toFixed(4)}` :
+                         `$${coin.price.toFixed(2)}`}
+                  change={`${coin.change24h >= 0 ? "+" : ""}${coin.change24h.toFixed(2)}%`}
+                  positive={coin.change24h >= 0}
+                  mcap={coin.marketCap >= 1_000_000_000 ? `$${(coin.marketCap / 1_000_000_000).toFixed(1)}B` :
+                         coin.marketCap >= 1_000_000       ? `$${(coin.marketCap / 1_000_000).toFixed(1)}M` :
+                         `$${coin.marketCap.toFixed(0)}`}
+                  vol={coin.volume24h >= 1_000_000_000 ? `$${(coin.volume24h / 1_000_000_000).toFixed(1)}B` :
+                       coin.volume24h >= 1_000_000       ? `$${(coin.volume24h / 1_000_000).toFixed(1)}M` :
+                       `$${coin.volume24h.toFixed(0)}`}
+                  image={coin.image}
+                  inWatchlist={watchedCoins.has(coin.id)}
+                  onToggleWatchlist={() => toggleWatch(coin.id)}
+                />
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </div>

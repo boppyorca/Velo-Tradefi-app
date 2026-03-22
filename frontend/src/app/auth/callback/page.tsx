@@ -5,27 +5,40 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { setVeloTokenCookie, syncAuthCookiesToServer } from "@/lib/auth-cookies";
 
 /**
- * Set auth cookies on server and redirect to dashboard
- * This ensures middleware can read the session
+ * Exchange Supabase session token for a backend JWT, then set auth cookies and redirect.
  */
-async function setAuthCookiesAndRedirect(session: {
+async function exchangeAndRedirect(session: {
   access_token: string;
   refresh_token?: string | null;
 }) {
-  // Save to localStorage
-  localStorage.setItem("velo_token", session.access_token);
+  const accessToken = session.access_token;
 
-  // Clear URL hash
+  // Save to localStorage immediately so auth works even if fetch fails
+  localStorage.setItem("velo_token", accessToken);
   window.history.replaceState(null, "", window.location.pathname);
-
-  // Middleware reads `velo_token` cookie — set immediately so auth works even if fetch fails
-  setVeloTokenCookie(session.access_token);
+  setVeloTokenCookie(accessToken);
 
   try {
-    await syncAuthCookiesToServer(session.access_token, session.refresh_token ?? "");
-    console.log("Auth cookies synced to server");
+    // Exchange Supabase token for backend JWT (this also upserts the user in DB)
+    const { authApi } = await import("@/lib/api-client");
+    const result = await authApi.exchangeGoogleToken(accessToken);
+
+    // Store the backend JWT instead of Supabase token for API calls
+    localStorage.setItem("velo_token", result.token);
+    setVeloTokenCookie(result.token);
+
+    // Set httpOnly cookies via server route
+    await syncAuthCookiesToServer(result.token, session.refresh_token ?? "");
+
+    // Update Zustand store with user data
+    try {
+      const { useAuthStore } = await import("@/lib/auth-store");
+      useAuthStore.getState().setAuth(result.user, result.token);
+    } catch { /* store may not be initialized */ }
+
+    console.log("Auth synced to backend");
   } catch (err) {
-    console.warn("Optional httpOnly cookie sync failed (still logged in via velo_token):", err);
+    console.warn("Backend token exchange failed (continuing with Supabase token):", err);
   }
 
   window.location.href = "/dashboard";
@@ -70,9 +83,9 @@ function AuthCallbackContent() {
         const { data: { session } } = await supabase.auth.getSession();
 
         if (session) {
-          console.log("Session found immediately, setting cookies and redirecting");
+          console.log("Session found immediately, exchanging token with backend");
           if (mounted) {
-            await setAuthCookiesAndRedirect(session);
+            await exchangeAndRedirect(session);
           }
           return;
         }
@@ -83,8 +96,8 @@ function AuthCallbackContent() {
           console.log("Auth state changed:", event, session ? "session exists" : "no session");
 
           if (event === "SIGNED_IN" && session && mounted) {
-            console.log("User signed in, setting cookies and redirecting to dashboard");
-            await setAuthCookiesAndRedirect(session);
+            console.log("User signed in via Google OAuth, exchanging token");
+            await exchangeAndRedirect(session);
             subscription.unsubscribe();
           } else if (event === "SIGNED_OUT" && mounted) {
             console.log("User signed out");
@@ -104,8 +117,8 @@ function AuthCallbackContent() {
             await supabase.auth.getSession();
 
           if (retrySession) {
-            console.log("Session found after retry");
-            await setAuthCookiesAndRedirect(retrySession);
+            console.log("Session found after retry, exchanging token");
+            await exchangeAndRedirect(retrySession);
             if (authStateSubscription) {
               authStateSubscription.unsubscribe();
             }
