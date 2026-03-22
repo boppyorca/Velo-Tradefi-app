@@ -2,10 +2,13 @@ using System.Net;
 using System.Net.Http;
 using System.Text;
 using System.Text.RegularExpressions;
+using FinAI.Api.Hubs;
+using FinAI.Api.Services;
 using FinAI.Core.Interfaces;
 using FinAI.Infrastructure.Data;
 using FinAI.Infrastructure.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 
@@ -215,6 +218,19 @@ builder.Services.AddCors(options =>
     });
 });
 
+// ── SignalR ─────────────────────────────────────────────────────────────────
+// Configure SignalR with Redis backplane for horizontal scaling (optional)
+builder.Services.AddSignalR(options =>
+{
+    options.EnableDetailedErrors = builder.Environment.IsDevelopment();
+    options.MaximumReceiveMessageSize = 32 * 1024; // 32KB max message size
+    options.StreamBufferCapacity = 20;
+})
+.AddJsonProtocol(options =>
+{
+    options.PayloadSerializerOptions.PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase;
+});
+
 // ── Redis Cache ───────────────────────────────────────────────────────────────
 var redisUrl = builder.Configuration["REDIS_URL"];
 if (!string.IsNullOrEmpty(redisUrl))
@@ -222,7 +238,9 @@ if (!string.IsNullOrEmpty(redisUrl))
     builder.Services.AddStackExchangeRedisCache(options =>
     {
         options.Configuration = redisUrl;
+        options.InstanceName = "VeloTradeFi:";
     });
+    Console.WriteLine($"Redis cache enabled: {redisUrl}");
 }
 
 // ── Dependency Injection ────────────────────────────────────────────────────────
@@ -260,6 +278,23 @@ builder.Services.AddHttpClient<IWeb3Service, Web3Service>(client =>
     client.Timeout = TimeSpan.FromSeconds(10);
 });
 
+// ── Redis Cache Service ────────────────────────────────────────────────────────
+builder.Services.AddSingleton<IRedisCacheService>(sp =>
+{
+    var cache = sp.GetService<Microsoft.Extensions.Caching.Distributed.IDistributedCache>();
+    var logger = sp.GetRequiredService<ILogger<RedisCacheService>>();
+    return new RedisCacheService(cache, logger);
+});
+
+// ── SignalR Stock Broadcaster ─────────────────────────────────────────────────
+builder.Services.AddSingleton<IStockPriceBroadcaster, SignalRStockBroadcaster>();
+
+// ── Web3 Signature Service ─────────────────────────────────────────────────────
+builder.Services.AddSingleton<IWeb3SignatureService, Web3SignatureService>();
+
+// ── SignalR Stock Broadcaster ─────────────────────────────────────────────────
+builder.Services.AddSingleton<IStockPriceBroadcaster, SignalRStockBroadcaster>();
+
 // ── Program ────────────────────────────────────────────────────────────────────
 var app = builder.Build();
 
@@ -288,6 +323,9 @@ app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();
+
+// ── SignalR Hubs ───────────────────────────────────────────────────────────────
+app.MapHub<StockPriceHub>("/hubs/stock-price");
 
 // Health check
 app.MapGet("/health", () => Results.Ok(new { status = "ok", timestamp = DateTime.UtcNow }));
