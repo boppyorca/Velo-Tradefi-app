@@ -1,4 +1,4 @@
-# FinAI Dashboard — Project Plan
+# Velo Dashboard — Project Plan
 
 > Đồ án môn Lập trình Web | Nhóm 2–3 người | 8 tuần | MVP deploy
 

@@ -1,43 +1,61 @@
 "use client";
 
 import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { NewsCard } from "@/components/features";
 import { Button } from "@/components/ui/button";
-import { RefreshCw } from "lucide-react";
+import { RefreshCw, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { newsApi } from "@/lib/api-client";
 import type { NewsItem } from "@/lib/types";
 
 type CategoryId = "all" | "ai" | "tech" | "crypto" | "stock";
 
 const CATEGORIES: { id: CategoryId; label: string; active: string }[] = [
-  { id: "all", label: "All", active: "bg-[#A3E635] text-[#0A0A0C] font-semibold" },
-  { id: "ai", label: "AI", active: "bg-[#6366F1] text-white font-semibold" },
-  { id: "tech", label: "Tech", active: "bg-cyan-500 text-white font-semibold" },
+  { id: "all",    label: "All",    active: "bg-[#A3E635] text-[#0A0A0C] font-semibold" },
+  { id: "ai",     label: "AI",    active: "bg-[#6366F1] text-white font-semibold" },
+  { id: "tech",   label: "Tech",  active: "bg-cyan-500 text-white font-semibold" },
   { id: "crypto", label: "Crypto", active: "bg-[#F59E0B] text-[#0A0A0C] font-semibold" },
-  { id: "stock", label: "Stock", active: "bg-[#A3E635] text-[#0A0A0C] font-semibold" },
+  { id: "stock",  label: "Stock", active: "bg-[#A3E635] text-[#0A0A0C] font-semibold" },
 ];
 
-const MOCK_NEWS: NewsItem[] = [
-  { id: "1", title: "NVIDIA announces next-gen AI chips at GTC 2026, targets $500B market", summary: "Jensen Huang reveals Blackwell Ultra architecture at annual developer conference, promising 3x performance improvement for LLM training workloads.", source: "TechCrunch", url: "https://techcrunch.com/2026/03/nvidia-gtc-2026", publishedAt: new Date(Date.now() - 3600000).toISOString(), category: "ai" },
-  { id: "2", title: "Bitcoin breaks $67K amid record ETF inflow surge of $1.2B in single day", summary: "Spot Bitcoin ETFs recorded unprecedented daily inflows as institutional adoption accelerates following favorable regulatory signals.", source: "CoinDesk", url: "https://www.coindesk.com/markets/2026/03/bitcoin-67k-etf-inflow", publishedAt: new Date(Date.now() - 7200000).toISOString(), category: "crypto" },
-  { id: "3", title: "Fed holds rates at 4.25-4.50%, signals two cuts in 2026 as inflation cools", summary: "Federal Reserve maintains current range while updating dot plot projections. Markets rally on dovish tone.", source: "Reuters", url: "https://www.reuters.com/markets/us/fed-holds-rates-2026-03", publishedAt: new Date(Date.now() - 10800000).toISOString(), category: "stock" },
-  { id: "4", title: "OpenAI releases GPT-5 with native multimodal reasoning at human expert level", summary: "The latest model achieves PhD-level performance across science, math, and coding benchmarks while reducing hallucinations by 80%.", source: "The Verge", url: "https://www.theverge.com/2026/03/openai-gpt5-release", publishedAt: new Date(Date.now() - 14400000).toISOString(), category: "ai" },
-  { id: "5", title: "Apple Vision Pro 2 specs leaked: M5 chip, improved display, $2,499 starting price", summary: "Apple's next spatial computing headset features significantly improved resolution and weight reduction, analyst Ming-Chi Kuo reports.", source: "MacRumors", url: "https://www.macrumors.com/2026/03/vision-pro-2-specs-leak", publishedAt: new Date(Date.now() - 18000000).toISOString(), category: "tech" },
-  { id: "6", title: "Ethereum ETF staking approval expected Q2 2026, could unlock $10B in yield", summary: "SEC reportedly reconsidering stance on staking rewards for Ethereum ETF products following BlackRock and Fidelity applications.", source: "Decrypt", url: "https://decrypt.co/2026/03/ethereum-etf-staking-approval", publishedAt: new Date(Date.now() - 21600000).toISOString(), category: "crypto" },
-  { id: "7", title: "TSLA stock drops 8% after Q1 deliveries miss estimates by 12%", summary: "Tesla delivered 355,000 vehicles in Q1, falling short of analyst consensus of 403,000 amid increasing EV competition.", source: "Bloomberg", url: "https://www.bloomberg.com/news/2026-03/tesla-q1-deliveries", publishedAt: new Date(Date.now() - 25200000).toISOString(), category: "stock" },
-  { id: "8", title: "Anthropic raises $3.5B at $61B valuation, largest AI funding round ever", summary: "The Claude maker secures mega-round led by Google and Amazon, bringing total raised to $7.5B with plans to scale safety research.", source: "FT", url: "https://www.ft.com/content/anthropic-3-5b-funding", publishedAt: new Date(Date.now() - 28800000).toISOString(), category: "ai" },
-];
+function mapApiToNews(raw: {
+  id: string;
+  title: string;
+  summary: string;
+  source: string;
+  url: string;
+  publishedAt: string;
+  category: string;
+}): NewsItem {
+  return {
+    id: raw.id,
+    title: raw.title,
+    summary: raw.summary,
+    source: raw.source,
+    url: raw.url,
+    publishedAt: raw.publishedAt,
+    category: raw.category as NewsItem["category"],
+  };
+}
 
 export default function NewsPage() {
   const [category, setCategory] = useState<CategoryId>("all");
-  const [refreshing, setRefreshing] = useState(false);
 
-  const filtered = category === "all" ? MOCK_NEWS : MOCK_NEWS.filter((n) => n.category === category);
+  const { data, isLoading, isFetching, error, refetch } = useQuery({
+    queryKey: ["news", category],
+    queryFn: async () => {
+      const res = await newsApi.list({ category, page: 1, pageSize: 30 });
+      return (res.data ?? []).map(mapApiToNews);
+    },
+    // Refresh every 5 minutes automatically
+    refetchInterval: 5 * 60 * 1000,
+    staleTime: 60 * 1000,
+    retry: 1,
+  });
 
-  function handleRefresh() {
-    setRefreshing(true);
-    setTimeout(() => setRefreshing(false), 800);
-  }
+  const news: NewsItem[] = data ?? [];
+  const filtered = category === "all" ? news : news.filter((n) => n.category === category);
 
   return (
     <div className="space-y-5">
@@ -46,18 +64,25 @@ export default function NewsPage() {
         <div>
           <div className="flex items-center gap-2 mb-1">
             <span className="bg-[#F59E0B]/10 text-[#F59E0B] text-[10px] font-bold px-2.5 py-1 rounded-full border border-[#F59E0B]/20">
-              RSS
+              LIVE
             </span>
+            {isFetching && !isLoading && (
+              <span className="flex items-center gap-1 text-[10px] text-[#4A4A5A]">
+                <span className="w-1.5 h-1.5 rounded-full bg-[#A3E635] animate-pulse" />
+                Updating...
+              </span>
+            )}
           </div>
-          <p className="text-xs text-[#4A4A5A]">Aggregated AI, tech, crypto & stock news</p>
+          <p className="text-xs text-[#4A4A5A]">Aggregated AI, tech, crypto & stock news · auto-refresh every 5 min</p>
         </div>
         <Button
           variant="outline"
           size="sm"
           className="h-8 border-white/[0.08] text-xs text-[#8A8A9A] hover:text-white hover:border-white/20"
-          onClick={handleRefresh}
+          onClick={() => refetch()}
+          disabled={isLoading || isFetching}
         >
-          <RefreshCw className={`w-3 h-3 mr-1.5 ${refreshing ? "animate-spin" : ""}`} />
+          <RefreshCw className={`w-3 h-3 mr-1.5 ${isFetching ? "animate-spin" : ""}`} />
           Refresh
         </Button>
       </div>
@@ -83,29 +108,80 @@ export default function NewsPage() {
         })}
       </div>
 
-      {/* News grid */}
-      {filtered.length > 0 ? (
-        <div className="grid grid-cols-2 gap-4">
-          {filtered.map((news) => (
-            <NewsCard key={news.id} news={news} />
-          ))}
-        </div>
-      ) : (
-        <div className="flex flex-col items-center justify-center py-16 text-center">
-          <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#4A4A5A" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="mb-3"><path d="M4 22h16a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v16a2 2 0 0 1-2 2Zm0 0a2 2 0 0 1-2-2v-9c0-1.1.9-2 2-2h2"/></svg>
-          <p className="text-sm text-[#4A4A5A]">No articles in this category</p>
+      {/* Error state */}
+      {error && (
+        <div className="p-4 rounded-xl bg-[#F05252]/10 border border-[#F05252]/20">
+          <p className="text-sm text-[#F05252] font-medium mb-1">Failed to load news</p>
+          <p className="text-xs text-[#8A8A9A]">{error.message}</p>
+          <Button
+            size="sm"
+            variant="outline"
+            className="mt-2 text-xs border-[#F05252]/30 text-[#F05252] hover:bg-[#F05252]/10"
+            onClick={() => refetch()}
+          >
+            Try again
+          </Button>
         </div>
       )}
 
-      {/* Load more */}
+      {/* Loading skeleton */}
+      {isLoading && (
+        <div className="grid grid-cols-2 gap-4">
+          {Array.from({ length: 8 }).map((_, i) => (
+            <div key={i} className="p-5 rounded-xl bg-[#141418] border border-white/[0.07] animate-pulse">
+              <div className="flex items-center gap-2 mb-3">
+                <div className="h-4 w-12 rounded bg-[#1E1E26]" />
+                <div className="h-3 w-16 rounded bg-[#1E1E26]" />
+              </div>
+              <div className="space-y-2 mb-3">
+                <div className="h-4 w-full rounded bg-[#1E1E26]" />
+                <div className="h-4 w-3/4 rounded bg-[#1E1E26]" />
+              </div>
+              <div className="h-3 w-2/3 rounded bg-[#1E1E26]" />
+              <div className="flex items-center gap-2 mt-4">
+                <div className="h-3 w-8 rounded bg-[#1E1E26]" />
+                <div className="h-3 w-20 rounded bg-[#1E1E26]" />
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* News grid */}
+      {!isLoading && filtered.length > 0 && (
+        <div className="grid grid-cols-2 gap-4">
+          {filtered.map((item) => (
+            <NewsCard key={item.id} news={item} />
+          ))}
+        </div>
+      )}
+
+      {/* Empty state */}
+      {!isLoading && filtered.length === 0 && !error && (
+        <div className="flex flex-col items-center justify-center py-16 text-center">
+          <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#4A4A5A" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="mb-3"><path d="M4 22h16a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v16a2 2 0 0 1-2 2Zm0 0a2 2 0 0 1-2-2v-9c0-1.1.9-2 2-2h2"/></svg>
+          <p className="text-sm text-[#4A4A5A]">
+            {category === "all"
+              ? "No stories available right now"
+              : `No ${category.toUpperCase()} stories found`}
+          </p>
+          <Button
+            size="sm"
+            variant="outline"
+            className="mt-3 text-xs"
+            onClick={() => refetch()}
+          >
+            <RefreshCw className="w-3 h-3 mr-1.5" />
+            Refresh
+          </Button>
+        </div>
+      )}
+
+      {/* Footer */}
       <div className="mt-8 text-center">
-        <Button
-          variant="outline"
-          className="border-white/[0.12] text-xs text-[#8A8A9A] hover:text-white"
-        >
-          Load more stories
-        </Button>
-        <p className="text-[10px] text-[#4A4A5A] mt-2">Powered by RSS aggregation · Updated every 15 minutes</p>
+        <p className="text-[10px] text-[#4A4A5A]">
+          Powered by Hacker News API · Updated every 5 minutes · {news.length} stories loaded
+        </p>
       </div>
     </div>
   );

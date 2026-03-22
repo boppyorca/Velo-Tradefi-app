@@ -66,21 +66,45 @@ public class StockService : IStockService
 
     private static readonly Dictionary<string, StockDto> FallbackStocks = new(StringComparer.OrdinalIgnoreCase)
     {
-        ["AAPL"]  = new("AAPL",  "Apple Inc.",           "NASDAQ", 192.10m, 1.52m,  0.80m,  58_230_000, 2_980_000_000_000m, DateTime.UtcNow),
-        ["NVDA"]  = new("NVDA",  "NVIDIA Corp.",          "NASDAQ", 135.21m, 3.17m,  2.40m,  42_100_000, 3_320_000_000_000m, DateTime.UtcNow),
-        ["TSLA"]  = new("TSLA",  "Tesla Inc.",            "NASDAQ", 248.50m,-1.25m, -0.50m,  31_800_000,   792_000_000_000m, DateTime.UtcNow),
-        ["MSFT"]  = new("MSFT",  "Microsoft Corp.",       "NASDAQ", 415.20m, 2.80m,  0.68m,  22_100_000, 3_090_000_000_000m, DateTime.UtcNow),
-        ["AMZN"]  = new("AMZN",  "Amazon.com Inc.",       "NASDAQ", 196.40m,-0.90m, -0.46m,  18_400_000, 2_050_000_000_000m, DateTime.UtcNow),
-        ["META"]  = new("META",  "Meta Platforms",        "NASDAQ", 512.30m, 8.40m,  1.67m,  15_600_000, 1_310_000_000_000m, DateTime.UtcNow),
-        ["GOOGL"] = new("GOOGL", "Alphabet Inc.",         "NASDAQ", 171.80m, 1.20m,  0.70m,  19_200_000, 2_140_000_000_000m, DateTime.UtcNow),
-        ["VNM"]   = new("VNM",   "Vietnam Dairy",         "HOSE",  78500m,  -952m, -1.20m,   3_200_000,   138_000_000_000m, DateTime.UtcNow),
-        ["VIC"]   = new("VIC",   "Vingroup JSC",         "HOSE",  42100m,   320m,  0.77m,   2_100_000,    92_000_000_000m, DateTime.UtcNow),
-        ["HPG"]   = new("HPG",   "Hoa Phat Group",       "HOSE",  28400m,   480m,  1.72m,   5_800_000,    78_000_000_000m, DateTime.UtcNow),
-        ["VHM"]   = new("VHM",   "Vinhomes JSC",         "HOSE",  37200m,  -210m, -0.56m,   1_900_000,    68_000_000_000m, DateTime.UtcNow),
-        ["MSN"]   = new("MSN",   "Masan Group",           "HOSE",  72100m,   540m,  0.75m,   1_100_000,    52_000_000_000m, DateTime.UtcNow),
-        ["FPT"]   = new("FPT",   "FPT Corp.",            "HOSE", 145600m, 1200m,  0.83m,   4_200_000,    86_000_000_000m, DateTime.UtcNow),
-        ["TCB"]   = new("TCB",   "Techcombank",          "HOSE",  24800m,   180m,  0.73m,   8_900_000,    92_000_000_000m, DateTime.UtcNow),
-        ["MWG"]   = new("MWG",   "Mobile World Inv.",    "HOSE",  51200m,  -280m, -0.54m,   1_800_000,    48_000_000_000m, DateTime.UtcNow),
+        ["AAPL"]  = new("AAPL",  "Apple Inc.",           "NASDAQ", 192.10m, 1.52m,  0.80m,  58_230_000, 2_980_000_000_000m, DateTime.UtcNow,
+                       Open: 191.20m, High: 193.40m, Low: 190.80m, PreviousClose: 190.58m,
+                       Week52High: 199.62m, Week52Low: 164.08m, PeRatio: 28.5m, DividendYield: 0.0044m, AvgVolume: 52_000_000m, Eps: 6.75m),
+        ["NVDA"]  = new("NVDA",  "NVIDIA Corp.",          "NASDAQ", 135.21m, 3.17m,  2.40m,  42_100_000, 3_320_000_000_000m, DateTime.UtcNow,
+                       Open: 133.00m, High: 136.80m, Low: 132.50m, PreviousClose: 132.04m,
+                       Week52High: 152.89m, Week52Low: 47.32m, PeRatio: 65.2m, DividendYield: 0.0003m, AvgVolume: 38_000_000m, Eps: 2.07m),
+        ["TSLA"]  = new("TSLA",  "Tesla Inc.",            "NASDAQ", 248.50m,-1.25m, -0.50m,  31_800_000,   792_000_000_000m, DateTime.UtcNow,
+                       Open: 250.10m, High: 251.80m, Low: 247.20m, PreviousClose: 249.75m,
+                       Week52High: 299.29m, Week52Low: 138.80m, PeRatio: 62.1m, DividendYield: null, AvgVolume: 28_000_000m, Eps: 4.00m),
+        ["MSFT"]  = new("MSFT",  "Microsoft Corp.",       "NASDAQ", 415.20m, 2.80m,  0.68m,  22_100_000, 3_090_000_000_000m, DateTime.UtcNow,
+                       Open: 413.50m, High: 416.20m, Low: 412.80m, PreviousClose: 412.40m,
+                       Week52High: 468.35m, Week52Low: 349.67m, PeRatio: 35.8m, DividendYield: 0.0072m, AvgVolume: 20_000_000m, Eps: 11.60m),
+        ["AMZN"]  = new("AMZN",  "Amazon.com Inc.",       "NASDAQ", 196.40m,-0.90m, -0.46m,  18_400_000, 2_050_000_000_000m, DateTime.UtcNow,
+                       Open: 197.20m, High: 198.10m, Low: 195.80m, PreviousClose: 197.30m,
+                       Week52High: 201.20m, Week52Low: 151.61m, PeRatio: 42.3m, DividendYield: null, AvgVolume: 16_000_000m, Eps: 4.64m),
+        ["META"]  = new("META",  "Meta Platforms",        "NASDAQ", 512.30m, 8.40m,  1.67m,  15_600_000, 1_310_000_000_000m, DateTime.UtcNow,
+                       Open: 508.00m, High: 514.50m, Low: 507.20m, PreviousClose: 503.90m,
+                       Week52High: 531.49m, Week52Low: 353.00m, PeRatio: 24.8m, DividendYield: 0.0034m, AvgVolume: 14_000_000m, Eps: 20.63m),
+        ["GOOGL"] = new("GOOGL", "Alphabet Inc.",         "NASDAQ", 171.80m, 1.20m,  0.70m,  19_200_000, 2_140_000_000_000m, DateTime.UtcNow,
+                       Open: 170.90m, High: 172.50m, Low: 170.30m, PreviousClose: 170.60m,
+                       Week52High: 191.75m, Week52Low: 130.67m, PeRatio: 23.5m, DividendYield: null, AvgVolume: 17_000_000m, Eps: 7.30m),
+        ["VNM"]   = new("VNM",   "Vietnam Dairy",         "HOSE",  78500m,  -952m, -1.20m,   3_200_000,   138_000_000_000m, DateTime.UtcNow,
+                       Open: 79200m, High: 79800m, Low: 78100m, PreviousClose: 79452m,
+                       Week52High: 95000m, Week52Low: 68000m, PeRatio: 18.2m, DividendYield: 0.035m, AvgVolume: 2_800_000m, Eps: 4310m),
+        ["VIC"]   = new("VIC",   "Vingroup JSC",         "HOSE",  42100m,   320m,  0.77m,   2_100_000,    92_000_000_000m, DateTime.UtcNow,
+                       Open: 41900m, High: 42500m, Low: 41800m, PreviousClose: 41780m,
+                       Week52High: 52000m, Week52Low: 35000m, PeRatio: 22.1m, DividendYield: null, AvgVolume: 1_800_000m, Eps: 1905m),
+        ["HPG"]   = new("HPG",   "Hoa Phat Group",       "HOSE",  28400m,   480m,  1.72m,   5_800_000,    78_000_000_000m, DateTime.UtcNow,
+                       Open: 28200m, High: 28600m, Low: 28100m, PreviousClose: 27920m,
+                       Week52High: 35000m, Week52Low: 22000m, PeRatio: 14.8m, DividendYield: 0.016m, AvgVolume: 4_900_000m, Eps: 1920m),
+        ["FPT"]   = new("FPT",   "FPT Corp.",            "HOSE", 145600m, 1200m,  0.83m,   4_200_000,    86_000_000_000m, DateTime.UtcNow,
+                       Open: 144800m, High: 146200m, Low: 144000m, PreviousClose: 144400m,
+                       Week52High: 168000m, Week52Low: 102000m, PeRatio: 27.4m, DividendYield: 0.022m, AvgVolume: 3_500_000m, Eps: 5310m),
+        ["TCB"]   = new("TCB",   "Techcombank",          "HOSE",  24800m,   180m,  0.73m,   8_900_000,    92_000_000_000m, DateTime.UtcNow,
+                       Open: 24700m, High: 24950m, Low: 24600m, PreviousClose: 24620m,
+                       Week52High: 31000m, Week52Low: 19000m, PeRatio: 8.9m, DividendYield: 0.009m, AvgVolume: 7_200_000m, Eps: 2780m),
+        ["MWG"]   = new("MWG",   "Mobile World Inv.",    "HOSE",  51200m,  -280m, -0.54m,   1_800_000,    48_000_000_000m, DateTime.UtcNow,
+                       Open: 51400m, High: 51600m, Low: 51000m, PreviousClose: 51480m,
+                       Week52High: 65000m, Week52Low: 42000m, PeRatio: 12.6m, DividendYield: 0.013m, AvgVolume: 1_500_000m, Eps: 4060m),
     };
 
     public StockService(HttpClient http, ILogger<StockService> logger)
@@ -269,21 +293,32 @@ public class StockService : IStockService
                 return null;
 
             var q = result[0];
-            var price          = q.GetProperty("regularMarketPrice").GetDecimal();
-            var change         = q.TryGetProperty("regularMarketChange", out var chProp) ? chProp.GetDecimal() : 0;
+
+            decimal? TryDecimal(JsonElement el, string prop)
+                => el.TryGetProperty(prop, out var p) && p.ValueKind == JsonValueKind.Number ? p.GetDecimal() : null;
+
+            var price           = q.GetProperty("regularMarketPrice").GetDecimal();
+            var change          = q.TryGetProperty("regularMarketChange", out var chProp) ? chProp.GetDecimal() : 0;
             var changePercent   = q.TryGetProperty("regularMarketChangePercent", out var cpProp) ? cpProp.GetDecimal() : 0;
-            var volume         = q.TryGetProperty("regularMarketVolume", out var volProp) ? volProp.GetInt64() : 0L;
-            var marketCap      = q.TryGetProperty("marketCap", out var mcProp) && mcProp.ValueKind == JsonValueKind.Number ? mcProp.GetDecimal() : (decimal?)null;
-            var exchange       = q.TryGetProperty("exchange", out var exProp) ? exProp.GetString() ?? "NASDAQ" : "NASDAQ";
-            var name           = q.TryGetProperty("shortName", out var nProp) ? nProp.GetString() ?? symbol : symbol;
+            var volume          = q.TryGetProperty("regularMarketVolume", out var volProp) ? volProp.GetInt64() : 0L;
+            var marketCap       = q.TryGetProperty("marketCap", out var mcProp) && mcProp.ValueKind == JsonValueKind.Number ? mcProp.GetDecimal() : (decimal?)null;
+            var exchange        = q.TryGetProperty("exchange", out var exProp) ? exProp.GetString() ?? "NASDAQ" : "NASDAQ";
+            var name            = q.TryGetProperty("shortName", out var nProp) ? nProp.GetString() ?? symbol : symbol;
             var currency        = q.TryGetProperty("currency", out var curProp) ? curProp.GetString() ?? "USD" : "USD";
 
-            // VN stocks use VND currency, Yahoo reports in VND
-            var priceDisplay = price;
-            if (currency == "VND")
-            {
-                // Already in VND — no conversion needed
-            }
+            // Extended fundamentals
+            var open           = TryDecimal(q, "regularMarketOpen");
+            var dayHigh       = TryDecimal(q, "regularMarketDayHigh");
+            var dayLow        = TryDecimal(q, "regularMarketDayLow");
+            var prevClose     = TryDecimal(q, "regularMarketPreviousClose");
+            var week52High    = TryDecimal(q, "fiftyTwoWeekHigh");
+            var week52Low     = TryDecimal(q, "fiftyTwoWeekLow");
+            var peRatio        = TryDecimal(q, "trailingPE");
+            var divYield       = TryDecimal(q, "dividendYield");
+            var avgVolume      = q.TryGetProperty("averageAnalystRating", out _) != false
+                                     ? TryDecimal(q, "averageVolume") ?? TryDecimal(q, "averageVolume10Day")
+                                     : null;
+            var eps           = TryDecimal(q, "epsTrailingTwelveMonths") ?? TryDecimal(q, "epsCurrentForward");
 
             var (mappedName, mappedExchange) = SymbolMap.TryGetValue(symbol.ToUpperInvariant(), out var meta)
                 ? (meta.Name, meta.Exchange)
@@ -298,7 +333,17 @@ public class StockService : IStockService
                 changePercent,
                 volume,
                 marketCap,
-                DateTime.UtcNow
+                DateTime.UtcNow,
+                Open: open,
+                High: dayHigh,
+                Low: dayLow,
+                PreviousClose: prevClose,
+                Week52High: week52High,
+                Week52Low: week52Low,
+                PeRatio: peRatio,
+                DividendYield: divYield,
+                AvgVolume: avgVolume,
+                Eps: eps
             );
         }
         catch (Exception ex)

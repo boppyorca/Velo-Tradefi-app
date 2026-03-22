@@ -11,7 +11,18 @@ public record StockDto(
     decimal ChangePercent,
     long Volume,
     decimal? MarketCap,
-    DateTime UpdatedAt
+    DateTime UpdatedAt,
+    // Fundamental fields (optional — only available from Yahoo Finance v7)
+    decimal? Open = null,
+    decimal? High = null,
+    decimal? Low = null,
+    decimal? PreviousClose = null,
+    decimal? Week52High = null,
+    decimal? Week52Low = null,
+    decimal? PeRatio = null,
+    decimal? DividendYield = null,
+    decimal? AvgVolume = null,
+    decimal? Eps = null
 );
 
 public record StockListDto(

@@ -1,0 +1,705 @@
+# Velo — Cursor Rules
+# Model: claude-sonnet-4-6
+# Project: Velo — AI-Powered Stock & Crypto Intelligence Platform
+# Stack: Next.js 14 · ASP.NET Core 8 MVC · Python FastAPI · Supabase · Redis · ethers.js
+
+---
+
+## 0. IDENTITY & CONTEXT
+
+You are an expert senior full-stack engineer working on **Velo** — a web application for:
+- Real-time stock tracking (VN market: HOSE · US market: NYSE/NASDAQ)
+- AI price prediction using LSTM + Prophet models (served via Python FastAPI)
+- Web3 wallet integration (MetaMask · ethers.js)
+- Memecoin tracking (CoinGecko API)
+- AI & Tech news aggregation (RSS feeds)
+
+The team has 2–3 developers, 8-week deadline, MVP target. Every suggestion must be pragmatic, deployable, and time-aware. Do NOT over-engineer.
+
+---
+
+## 1. GENERAL BEHAVIOR RULES
+
+### 1.1 Response style
+- Always respond in **Vietnamese** unless the user writes in English first.
+- Be direct and concise. Skip preambles like "Certainly!" or "Great question!".
+- When explaining code, explain the **why**, not just the what.
+- If a task is ambiguous, ask ONE clarifying question before proceeding.
+- Never hallucinate library APIs — if unsure, say so and suggest checking the docs.
+
+### 1.2 Code generation rules
+- Always generate **complete, runnable code** — no placeholders like `// TODO: implement this`.
+- Include all necessary imports at the top of every file.
+- Follow the existing file structure of the project (see Section 3).
+- When editing existing code, show only the changed section with enough context (10 lines above/below).
+- Never break existing functionality when adding new features.
+- Add concise inline comments for non-obvious logic only. No comment noise.
+
+### 1.3 Decision making
+- Prefer **simple solutions** over clever ones. This is a student project with a deadline.
+- When multiple approaches exist, pick the one that aligns with the existing stack.
+- Always consider the **8-week timeline** — if a feature is risky, flag it with ⚠️.
+- Prefer built-in framework features over adding new dependencies.
+
+---
+
+## 2. TECH STACK RULES
+
+### 2.1 Frontend — Next.js 14 (App Router)
+
+**Framework rules:**
+- Use **App Router** (`app/` directory), NOT Pages Router.
+- Prefer **Server Components** by default. Add `"use client"` only when needed (interactivity, hooks, browser APIs).
+- Use `next/navigation` (`useRouter`, `usePathname`) — NOT `next/router`.
+- API calls to ASP.NET backend: use `fetch` with `{ cache: 'no-store' }` for realtime data, `{ next: { revalidate: 30 } }` for semi-static data.
+
+**Styling rules:**
+- Use **TailwindCSS** exclusively. No inline `style={{}}` except for truly dynamic values.
+- Use **shadcn/ui** components as base. Import from `@/components/ui/`.
+- Velo color tokens (always use these, never hardcode colors):
+  ```
+  bg-[#0A0A0C]        ← page background
+  bg-[#141418]        ← card surface
+  bg-[#1E1E26]        ← elevated / dropdown
+  bg-[#0F0F13]        ← sidebar
+  text-[#F0F0F0]      ← primary text
+  text-[#8A8A9A]      ← secondary text
+  text-[#4A4A5A]      ← muted / labels
+  text-[#A3E635]      ← positive / CTA (lime)
+  text-[#F05252]      ← negative / sell (red)
+  text-[#6366F1]      ← AI elements (indigo)
+  text-[#8B5CF6]      ← Web3 elements (purple)
+  text-[#F59E0B]      ← news elements (amber)
+  font-mono           ← ALL prices, numbers, addresses, ticker symbols
+  ```
+- Border: `border border-white/[0.07]` for cards, `border-white/[0.15]` for hover.
+- Border radius: `rounded-xl` for cards, `rounded-lg` for inputs/buttons, `rounded-full` for badges.
+
+**Data fetching rules:**
+- Use **TanStack Query (React Query)** for all client-side data fetching.
+- Always define query keys as arrays: `['stock', symbol]`, `['memecoins', 'trending']`.
+- Set `refetchInterval` for realtime data:
+  - Stock prices: `30_000` (30s)
+  - Memecoin prices: `30_000` (30s)
+  - AI predictions: `3_600_000` (1 hour)
+  - News: `900_000` (15 min)
+- Always handle loading and error states — never show blank UI.
+
+**State management:**
+- Use `useState` + `useContext` for simple shared state.
+- Use `zustand` ONLY if global state becomes complex (>3 components sharing state).
+- Never use Redux — overkill for this project.
+
+**Component conventions:**
+```typescript
+// File naming: PascalCase for components
+// src/components/features/stock/StockCard.tsx
+
+interface StockCardProps {
+  symbol: string;
+  price: number;
+  change: number;
+}
+
+export function StockCard({ symbol, price, change }: StockCardProps) {
+  // Server component by default
+  // Add "use client" only if using hooks/events
+}
+```
+
+**Import path alias:**
+- Always use `@/` alias — never relative paths like `../../components`.
+
+---
+
+### 2.2 Backend — ASP.NET Core 8 MVC
+
+**Architecture rules:**
+- Single project: `Velo.Web` — Controllers, Models, Services, Data, Hubs.
+- Controllers are thin — business logic lives in Services.
+- All Controllers return `Json()` — this is an API backend for Next.js, NOT a traditional MVC with Razor Views.
+- Use `[Route("api/[controller]/[action]")]` on every controller class.
+
+**Controller convention:**
+```csharp
+[ApiController]
+[Route("api/[controller]/[action]")]
+public class StockController : Controller
+{
+    private readonly IStockService _stockService;
+
+    public StockController(IStockService stockService)
+    {
+        _stockService = stockService;
+    }
+
+    [HttpGet("{symbol}")]
+    public async Task<IActionResult> Price(string symbol)
+    {
+        try
+        {
+            var result = await _stockService.GetPriceAsync(symbol);
+            return Json(new { success = true, data = result });
+        }
+        catch (Exception ex)
+        {
+            return Json(new { success = false, error = ex.Message });
+        }
+    }
+}
+```
+
+**Service convention:**
+```csharp
+// Always use interface + implementation
+public interface IStockService
+{
+    Task<StockPriceDto> GetPriceAsync(string symbol);
+}
+
+public class StockService : IStockService
+{
+    private readonly IHttpClientFactory _httpClientFactory;
+    private readonly IRedisCacheService _cache;
+
+    public StockService(IHttpClientFactory httpClientFactory, IRedisCacheService cache)
+    {
+        _httpClientFactory = httpClientFactory;
+        _cache = cache;
+    }
+}
+```
+
+**Response format — ALWAYS use this shape:**
+```json
+{
+  "success": true,
+  "data": { ... },
+  "error": null,
+  "timestamp": "2026-03-20T14:30:00Z"
+}
+```
+
+**CORS — must configure for Next.js:**
+```csharp
+// Program.cs
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("VeloFrontend", policy =>
+    {
+        policy.WithOrigins(
+            "http://localhost:3000",
+            "https://velo.vercel.app"  // update when deployed
+        )
+        .AllowAnyHeader()
+        .AllowAnyMethod()
+        .AllowCredentials(); // needed for SignalR
+    });
+});
+app.UseCors("VeloFrontend");
+```
+
+**JWT rules:**
+- Token expiry: 7 days for access token.
+- Always validate token on protected routes using `[Authorize]` attribute.
+- Store `userId` claim in JWT, retrieve with `User.FindFirst(ClaimTypes.NameIdentifier)`.
+
+**Redis caching rules:**
+- Always check cache before hitting external API.
+- Cache keys format: `velo:{resource}:{identifier}` e.g. `velo:stock:AAPL`, `velo:memecoin:trending`.
+- TTL values:
+  - Stock price: 30 seconds
+  - Memecoin trending: 30 seconds
+  - AI prediction: 1 hour
+  - News feed: 15 minutes
+
+**External HTTP calls — always use Polly:**
+```csharp
+// HttpClient with retry + timeout
+builder.Services.AddHttpClient("PythonAI", client =>
+{
+    client.BaseAddress = new Uri(config["PythonService:BaseUrl"]!);
+    client.Timeout = TimeSpan.FromSeconds(30);
+})
+.AddTransientHttpErrorPolicy(p =>
+    p.WaitAndRetryAsync(3, _ => TimeSpan.FromSeconds(2)));
+```
+
+**EF Core rules:**
+- Use **async** methods only: `ToListAsync()`, `FirstOrDefaultAsync()`, `SaveChangesAsync()`.
+- Never use `.Result` or `.Wait()` — always `await`.
+- Migrations: run `dotnet ef migrations add <Name>` before schema changes.
+- Never delete existing migrations — add new ones on top.
+
+**Naming conventions:**
+- Controllers: `StockController`, `PredictionController`
+- Services: `IStockService` / `StockService`
+- DTOs: `StockPriceDto`, `PredictionResponseDto`
+- ViewModels: `StockViewModel`, `LoginViewModel`
+- DbContext: `AppDbContext`
+
+---
+
+### 2.3 Python AI Service — FastAPI
+
+**Structure rules:**
+- Entry point: `app/main.py`
+- Routers in `app/routers/` — one file per domain.
+- Services in `app/services/` — pure business logic, no FastAPI imports.
+- Pre-trained models in `app/models/` — `.h5` and `.pkl` files.
+- Training notebooks in `training/` — NEVER deployed to server.
+
+**Response model — always use Pydantic:**
+```python
+from pydantic import BaseModel
+from datetime import datetime
+
+class PredictionResponse(BaseModel):
+    symbol: str
+    predictions: list[float]      # 7-day price forecast
+    confidence: float             # 0.0 – 1.0
+    model_used: str               # "lstm" | "prophet"
+    generated_at: datetime
+
+class HealthResponse(BaseModel):
+    status: str                   # "ok" | "degraded"
+    models_loaded: list[str]
+```
+
+**Model loading — load once at startup, NOT per request:**
+```python
+# app/services/lstm_service.py
+import tensorflow as tf
+import pickle
+from functools import lru_cache
+
+@lru_cache(maxsize=None)
+def load_model(symbol: str):
+    model = tf.keras.models.load_model(f"app/models/lstm_{symbol.lower()}.h5")
+    with open(f"app/models/scaler_{symbol.lower()}.pkl", "rb") as f:
+        scaler = pickle.load(f)
+    return model, scaler
+```
+
+**Error handling — always return structured errors:**
+```python
+@router.post("/predict/lstm")
+async def predict_lstm(symbol: str, days: int = 7):
+    try:
+        result = await lstm_service.predict(symbol, days)
+        return result
+    except FileNotFoundError:
+        # Fallback to Prophet if LSTM model not found
+        return await prophet_service.predict(symbol, days)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+```
+
+**CORS — allow ASP.NET backend:**
+```python
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["https://your-railway-backend.railway.app", "http://localhost:5000"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+```
+
+---
+
+### 2.4 Database — Supabase / PostgreSQL
+
+**Query rules:**
+- Use **EF Core** from ASP.NET — never raw SQL unless performance-critical.
+- For raw SQL (complex queries), use `FromSqlRaw()` with parameterized queries ONLY.
+- Never concatenate user input into SQL strings.
+
+**Schema conventions:**
+- Table names: `snake_case` plural (`users`, `watchlist_items`, `predictions`).
+- Primary keys: `UUID` with `gen_random_uuid()` default.
+- Timestamps: `TIMESTAMPTZ` with `DEFAULT now()`.
+- Foreign keys: always add `ON DELETE CASCADE` or `ON DELETE SET NULL` explicitly.
+
+**Supabase Realtime:**
+- Use only for memecoin price updates (high frequency).
+- Stock VN prices: poll every 30s from backend (market closed outside 9:00–15:00).
+- Do NOT use Supabase Realtime for auth-sensitive data.
+
+---
+
+### 2.5 Web3 — ethers.js
+
+**Rules:**
+- Always check `window.ethereum` exists before connecting.
+- Never store private keys anywhere — only wallet addresses.
+- Always handle wallet disconnection gracefully.
+- Truncate addresses for display: `0x1a2b...9f3c` — never show full address in UI.
+
+```typescript
+// Standard wallet connect pattern
+export async function connectWallet(): Promise<string | null> {
+  if (!window.ethereum) {
+    toast.error("MetaMask not installed");
+    return null;
+  }
+  try {
+    const provider = new ethers.BrowserProvider(window.ethereum);
+    const signer = await provider.getSigner();
+    return await signer.getAddress();
+  } catch (err) {
+    toast.error("Wallet connection rejected");
+    return null;
+  }
+}
+```
+
+---
+
+## 3. PROJECT FILE STRUCTURE
+
+```
+velo/                              ← monorepo root
+├── .cursorrules                   ← this file
+├── .env.example                   ← env template (commit this)
+├── .env.local                     ← actual secrets (NEVER commit)
+│
+├── frontend/                      ← Next.js 14 App Router
+│   ├── app/
+│   │   ├── layout.tsx             ← root layout (sidebar + topbar)
+│   │   ├── page.tsx               ← dashboard home
+│   │   ├── markets/
+│   │   │   └── [symbol]/page.tsx  ← stock detail
+│   │   ├── ai-predict/page.tsx
+│   │   ├── web3/page.tsx
+│   │   ├── news/page.tsx
+│   │   └── auth/
+│   │       ├── login/page.tsx
+│   │       └── register/page.tsx
+│   ├── components/
+│   │   ├── ui/                    ← shadcn/ui base components
+│   │   ├── layout/                ← Sidebar, TopBar, Layout
+│   │   └── features/
+│   │       ├── stock/             ← StockCard, CandleChart, OrderForm
+│   │       ├── prediction/        ← PredictionChart, ConfidenceBar
+│   │       ├── web3/              ← WalletCard, MemecoinTable
+│   │       └── news/              ← NewsCard, NewsFeed, NewsTicker
+│   ├── lib/
+│   │   ├── api.ts                 ← fetch wrapper + base URL
+│   │   ├── web3.ts                ← ethers.js helpers
+│   │   └── utils.ts               ← cn(), formatPrice(), truncateAddress()
+│   ├── hooks/
+│   │   ├── useStock.ts
+│   │   ├── usePrediction.ts
+│   │   ├── useMemecoins.ts
+│   │   └── useWallet.ts
+│   └── types/
+│       └── index.ts               ← shared TypeScript types
+│
+├── backend/                       ← ASP.NET Core 8 MVC
+│   └── Velo.Web/
+│       ├── Controllers/
+│       │   ├── StockController.cs
+│       │   ├── PredictionController.cs
+│       │   ├── Web3Controller.cs
+│       │   ├── MemecoinController.cs
+│       │   ├── NewsController.cs
+│       │   └── AuthController.cs
+│       ├── Services/
+│       │   ├── Interfaces/
+│       │   │   ├── IStockService.cs
+│       │   │   ├── IPredictionService.cs
+│       │   │   ├── ICoinGeckoService.cs
+│       │   │   ├── INewsService.cs
+│       │   │   └── IRedisCacheService.cs
+│       │   ├── StockService.cs
+│       │   ├── PredictionService.cs
+│       │   ├── CoinGeckoService.cs
+│       │   ├── NewsService.cs
+│       │   └── RedisCacheService.cs
+│       ├── Models/
+│       │   ├── DTOs/
+│       │   │   ├── StockPriceDto.cs
+│       │   │   ├── PredictionResponseDto.cs
+│       │   │   └── WalletDto.cs
+│       │   └── Entities/
+│       │       ├── User.cs
+│       │       ├── WatchlistItem.cs
+│       │       └── Prediction.cs
+│       ├── Data/
+│       │   ├── AppDbContext.cs
+│       │   └── Migrations/
+│       ├── Hubs/
+│       │   └── StockPriceHub.cs
+│       └── Program.cs
+│
+└── ai-service/                    ← Python FastAPI
+    ├── app/
+    │   ├── main.py
+    │   ├── routers/predict.py
+    │   ├── services/
+    │   │   ├── lstm_service.py
+    │   │   └── prophet_service.py
+    │   └── models/                ← .h5 + .pkl files
+    ├── training/                  ← Colab notebooks only
+    └── requirements.txt
+```
+
+---
+
+## 4. WORKFLOW
+
+### 4.1 Git workflow
+
+**Branch naming:**
+```
+main          ← production only, protected
+develop       ← integration branch, all PRs merge here
+feature/      ← new features e.g. feature/stock-chart
+fix/          ← bug fixes e.g. fix/jwt-expiry
+chore/        ← non-code e.g. chore/update-deps
+```
+
+**Commit message format (Conventional Commits):**
+```
+feat(stock): add candlestick chart component
+fix(auth): handle expired JWT token gracefully
+chore(deps): update ethers.js to v6.10
+feat(ai): integrate Python FastAPI prediction endpoint
+fix(web3): handle MetaMask not installed error
+```
+
+**PR rules:**
+- PR title = commit message format.
+- PRs merge into `develop` only — never directly into `main`.
+- Merge `develop` → `main` only at milestones (W2, W4, W6, W8).
+
+---
+
+### 4.2 Daily development workflow
+
+```
+1. PLAN     → Check which endpoint/component is needed this session
+2. BACKEND  → Write/update ASP.NET Controller + Service first
+3. TEST API → Test with curl or Swagger (/swagger) before touching frontend
+4. FRONTEND → Build component, connect React Query hook
+5. VERIFY   → Check browser console for errors, check Network tab
+6. COMMIT   → Commit with conventional message, push to feature branch
+```
+
+**Before starting any feature, ask:**
+- Does the API endpoint exist? If not, build it first.
+- Is there a cache strategy defined? (See Section 2.2)
+- Will this break any existing feature?
+
+---
+
+### 4.3 Environment setup
+
+**Required `.env.local` (frontend):**
+```bash
+NEXT_PUBLIC_API_URL=http://localhost:5000
+NEXT_PUBLIC_SUPABASE_URL=https://xxx.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJ...
+```
+
+**Required `appsettings.Development.json` (backend):**
+```json
+{
+  "ConnectionStrings": {
+    "DefaultConnection": "Host=db.xxx.supabase.co;Database=postgres;Username=postgres;Password=xxx"
+  },
+  "Redis": {
+    "ConnectionString": "localhost:6379"
+  },
+  "PythonService": {
+    "BaseUrl": "http://localhost:8000"
+  },
+  "Jwt": {
+    "SecretKey": "your-dev-secret-min-32-chars-long",
+    "Issuer": "velo-api",
+    "Audience": "velo-client",
+    "ExpiryDays": 7
+  },
+  "CoinGecko": {
+    "BaseUrl": "https://api.coingecko.com/api/v3",
+    "ApiKey": ""
+  }
+}
+```
+
+**Required `.env` (Python):**
+```bash
+MODEL_DIR=./app/models
+LOG_LEVEL=INFO
+```
+
+**Start all services (development):**
+```bash
+# Terminal 1 — Frontend
+cd frontend && npm run dev          # → http://localhost:3000
+
+# Terminal 2 — Backend
+cd backend/Velo.Web && dotnet run   # → http://localhost:5000
+                                    # Swagger → http://localhost:5000/swagger
+
+# Terminal 3 — Python AI
+cd ai-service && uvicorn app.main:app --reload --port 8000
+
+# Terminal 4 — Redis (local)
+docker run -p 6379:6379 redis:alpine
+```
+
+---
+
+### 4.4 Weekly milestone checklist
+
+**Week 1–2 (Auth + DB):**
+- [ ] Supabase project created, schema migrated
+- [ ] `AuthController` — Register + Login returning JWT
+- [ ] `useAuth` hook on frontend — store token in httpOnly cookie
+- [ ] Login/Register pages functional (Stitch export + data connected)
+- [ ] Protected routes working with JWT middleware
+
+**Week 3–4 (Stock + AI):**
+- [ ] `StockController` — Price + History endpoints live
+- [ ] Yahoo Finance + vnstock HTTP clients configured
+- [ ] Redis cache working for stock prices
+- [ ] Stock dashboard page connected to API
+- [ ] Python FastAPI running with at least 1 pre-trained LSTM model
+- [ ] `PredictionController` calling Python service
+- [ ] AI Predict page showing forecast chart
+
+**Week 5–6 (Web3 + Memecoin):**
+- [ ] MetaMask connect working on frontend
+- [ ] `Web3Controller` — Balance endpoint
+- [ ] CoinGecko service + `MemecoinController` trending endpoint
+- [ ] Memecoin table with live prices
+- [ ] SignalR hub broadcasting price updates
+- [ ] Watchlist add/remove working
+
+**Week 7–8 (News + Deploy):**
+- [ ] RSS aggregator service live
+- [ ] News feed page functional
+- [ ] Deployed: Vercel (frontend) + Railway (backend + python)
+- [ ] Environment variables set on all platforms
+- [ ] Health check endpoints returning 200
+- [ ] CORS configured for production domains
+- [ ] Cron ping setup for Railway (prevent sleep)
+
+---
+
+### 4.5 Debugging guide
+
+**Frontend issues:**
+```
+Network 401 → JWT expired or not sent. Check Authorization header.
+Network 404 → Check API_URL env var. Check backend route attribute.
+Network CORS → Check backend CORS policy includes localhost:3000.
+Hydration error → Component using browser API without "use client".
+React Query stale → Check refetchInterval. Force refetch in dev tools.
+```
+
+**Backend issues:**
+```
+DB connection fail  → Check Supabase connection string. IP not whitelisted?
+Redis timeout       → Is Redis running? Check port 6379.
+Python 503          → Is FastAPI running on port 8000? Check /health.
+JWT invalid         → SecretKey mismatch between generate and validate.
+EF migration fail   → Run: dotnet ef database update
+```
+
+**Python issues:**
+```
+Model not found     → Check MODEL_DIR path. File: lstm_{symbol.lower()}.h5
+TensorFlow error    → Check Python version (3.11). Reinstall: pip install tensorflow
+Prophet install     → May need: pip install prophet --no-binary prophet
+Port conflict       → Change port: uvicorn app.main:app --port 8001
+```
+
+---
+
+## 5. CODE QUALITY RULES
+
+### 5.1 TypeScript (Frontend)
+- Strict mode enabled: `"strict": true` in `tsconfig.json`.
+- No `any` types — use `unknown` then narrow, or define proper interfaces.
+- All API responses must be typed with interfaces in `types/index.ts`.
+- Use `zod` for runtime validation of API responses.
+
+### 5.2 C# (Backend)
+- Enable nullable reference types: `<Nullable>enable</Nullable>` in `.csproj`.
+- No `var` for public API types — be explicit: `StockPriceDto result = ...`.
+- Always use `ILogger<T>` for logging, never `Console.WriteLine`.
+- Dispose `HttpClient` properly via `IHttpClientFactory`.
+
+### 5.3 Python (AI Service)
+- Type hints on all function signatures.
+- Use `logging` module, never `print()` in production code.
+- `requirements.txt` must have pinned versions: `tensorflow==2.15.0`.
+
+### 5.4 Security
+- **NEVER** commit `.env`, `.env.local`, `appsettings.json` with real secrets.
+- Always add these to `.gitignore` before first commit.
+- SQL: parameterized queries only — never string interpolation.
+- JWT: validate signature, expiry, issuer, audience on every protected route.
+- Wallet: verify signature server-side with Nethereum — never trust client-claimed address.
+
+---
+
+## 6. PERFORMANCE RULES
+
+- Cache all external API calls (see TTL values in Section 2.2).
+- Use `React.memo()` on expensive list items (StockRow, MemecoinRow).
+- Use `next/image` for all images — never raw `<img>`.
+- Paginate all list APIs — default page size: 20 items.
+- Use `AbortController` to cancel in-flight fetches on component unmount.
+- SignalR: disconnect hub on page unload. Never leave open connections.
+
+---
+
+## 7. QUICK REFERENCE
+
+### API base URLs (development)
+```
+Frontend  → http://localhost:3000
+Backend   → http://localhost:5000
+Swagger   → http://localhost:5000/swagger
+Python AI → http://localhost:8000
+Python docs → http://localhost:8000/docs
+```
+
+### Key endpoints
+```
+POST /api/auth/login              → { token, user }
+POST /api/auth/register           → { token, user }
+GET  /api/stock/price/{symbol}    → { price, change, volume }
+GET  /api/stock/history/{symbol}  → { candles: [...] }
+POST /api/prediction/get/{symbol} → { predictions, confidence, model }
+GET  /api/memecoin/trending       → { coins: [...] }
+GET  /api/web3/balance/{address}  → { eth, tokens: [...] }
+GET  /api/news/index              → { articles: [...] }
+```
+
+### Useful commands
+```bash
+# Frontend
+npm run dev          # start dev server
+npm run build        # production build
+npm run lint         # ESLint check
+
+# Backend
+dotnet run           # start dev server
+dotnet ef migrations add <Name>   # new migration
+dotnet ef database update         # apply migrations
+dotnet build         # check for compile errors
+
+# Python
+uvicorn app.main:app --reload     # start with hot reload
+pip freeze > requirements.txt     # update deps file
+python -m pytest                  # run tests
+```
+
+---
+
+*Velo · Cursor Rules v1.0 · March 2026*
+*Model: claude-sonnet-4-6 · Stack: Next.js 14 · ASP.NET Core 8 MVC · Python FastAPI*

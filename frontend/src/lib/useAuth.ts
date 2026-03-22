@@ -88,7 +88,14 @@ export function useAuth() {
 
     // Clear local auth state
     clearAuth();
-    localStorage.removeItem("velo-auth");
+    if (typeof localStorage !== "undefined") {
+      localStorage.removeItem("velo-auth");
+      localStorage.removeItem("velo_token");
+    }
+    // Clear auth cookie so middleware treats user as logged out
+    if (typeof document !== "undefined") {
+      document.cookie = "velo_token=; Path=/; Max-Age=0; SameSite=Lax";
+    }
 
     router.push("/login");
   }, [clearAuth, router]);

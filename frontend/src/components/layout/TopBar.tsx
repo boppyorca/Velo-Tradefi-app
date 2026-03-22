@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { Bell, Wallet, ChevronDown, Search } from "lucide-react";
 import {
   DropdownMenu,
@@ -8,8 +9,23 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { useAuthStore } from "@/lib/auth-store";
+import { useAuth } from "@/lib/useAuth";
 
 export function TopBar() {
+  const router = useRouter();
+  const { user } = useAuthStore();
+  const { logout } = useAuth();
+
+  const displayName =
+    user?.fullName?.trim() || user?.email?.split("@")[0] || "User";
+  const initials = displayName
+    .split(" ")
+    .map((s) => s[0])
+    .join("")
+    .toUpperCase()
+    .slice(0, 2) || "US";
+
   return (
     <header className="h-14 bg-[#0F0F13] border-b border-white/[0.07] sticky top-0 z-30 flex items-center px-6 gap-4">
       {/* Center: Search */}
@@ -54,14 +70,16 @@ export function TopBar() {
         <DropdownMenu>
           <DropdownMenuTrigger className="flex items-center gap-2 hover:opacity-90 transition-opacity outline-none cursor-pointer">
             <div className="text-right hidden sm:block">
-              <p className="text-[12px] text-[#F0F0F0] font-medium leading-tight">USER_882</p>
+              <p className="text-[12px] text-[#F0F0F0] font-medium leading-tight truncate max-w-[120px]">
+                {displayName}
+              </p>
               <p className="text-[10px] text-[#A3E635]">
                 <span className="w-1.5 h-1.5 bg-[#A3E635] rounded-full inline-block mr-1" />
                 CONNECTED
               </p>
             </div>
             <div className="w-8 h-8 rounded-full bg-[#1E1E26] border border-white/[0.10] flex items-center justify-center">
-              <span className="text-[11px] text-[#8A8A9A] font-mono">US</span>
+              <span className="text-[11px] text-[#8A8A9A] font-mono">{initials}</span>
             </div>
             <ChevronDown className="w-3.5 h-3.5 text-[#4A4A5A]" />
           </DropdownMenuTrigger>
@@ -69,14 +87,24 @@ export function TopBar() {
             align="end"
             className="w-48 bg-[#141418] border border-white/[0.10]"
           >
-            <DropdownMenuItem className="text-[#8A8A9A] hover:text-[#F0F0F0] cursor-pointer text-sm">
+            <DropdownMenuItem
+              className="text-[#8A8A9A] hover:text-[#F0F0F0] cursor-pointer text-sm"
+              onClick={() => router.push("/settings")}
+            >
               Profile
             </DropdownMenuItem>
-            <DropdownMenuItem className="text-[#8A8A9A] hover:text-[#F0F0F0] cursor-pointer text-sm">
+            <DropdownMenuItem
+              className="text-[#8A8A9A] hover:text-[#F0F0F0] cursor-pointer text-sm"
+              onClick={() => router.push("/settings")}
+            >
               Settings
             </DropdownMenuItem>
             <DropdownMenuSeparator className="bg-white/[0.07]" />
-            <DropdownMenuItem className="text-[#F05252] hover:text-[#F05252]/90 cursor-pointer text-sm">
+            <DropdownMenuItem
+              className="text-[#F05252] hover:text-[#F05252]/90 cursor-pointer text-sm"
+              variant="destructive"
+              onClick={() => logout()}
+            >
               Logout
             </DropdownMenuItem>
           </DropdownMenuContent>

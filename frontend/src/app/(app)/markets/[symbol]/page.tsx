@@ -3,14 +3,13 @@
 import { useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
-import { PageHeader } from "@/components/features";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { PredictionChart } from "@/components/features";
-import { StockChart } from "@/components/features/StockChart";
+import { PredictionChart, StockChart } from "@/components/features";
 import { cn } from "@/lib/utils";
 import { useStockQuote, useStockHistory } from "@/lib/hooks";
+import { predictionApi } from "@/lib/api-client";
 import {
   ArrowLeft,
   TrendingUp,
@@ -19,25 +18,14 @@ import {
   StarOff,
   Brain,
   AlertCircle,
+  Activity,
+  DollarSign,
+  BarChart2,
+  Clock,
+  Zap,
+  Shield,
+  TrendingUp as TrendingUpIcon,
 } from "lucide-react";
-import type { Prediction } from "@/lib/types";
-
-const MOCK_PREDICTION: Prediction = {
-  symbol: "AAPL",
-  model: "lstm",
-  currentPrice: 192.10,
-  trend: "bullish",
-  confidence: 0.87,
-  predictions: [
-    { date: new Date(Date.now() + 86400000).toISOString().split("T")[0], predictedPrice: 193.40, confidence: 0.82, upperBound: 196.10, lowerBound: 190.70 },
-    { date: new Date(Date.now() + 172800000).toISOString().split("T")[0], predictedPrice: 194.20, confidence: 0.80, upperBound: 198.50, lowerBound: 189.90 },
-    { date: new Date(Date.now() + 259200000).toISOString().split("T")[0], predictedPrice: 195.80, confidence: 0.77, upperBound: 201.20, lowerBound: 190.40 },
-    { date: new Date(Date.now() + 345600000).toISOString().split("T")[0], predictedPrice: 196.30, confidence: 0.74, upperBound: 203.80, lowerBound: 188.80 },
-    { date: new Date(Date.now() + 432000000).toISOString().split("T")[0], predictedPrice: 197.90, confidence: 0.70, upperBound: 206.40, lowerBound: 189.40 },
-    { date: new Date(Date.now() + 518400000).toISOString().split("T")[0], predictedPrice: 198.50, confidence: 0.66, upperBound: 208.90, lowerBound: 188.10 },
-    { date: new Date(Date.now() + 604800000).toISOString().split("T")[0], predictedPrice: 199.20, confidence: 0.62, upperBound: 211.50, lowerBound: 186.90 },
-  ],
-};
 
 const TIMEFRAMES = ["1D", "1W", "1M", "3M", "1Y", "ALL"] as const;
 type Timeframe = (typeof TIMEFRAMES)[number];
@@ -62,9 +50,19 @@ export default function StockDetailPage() {
 
   const [watched, setWatched] = useState(false);
   const [timeframe, setTimeframe] = useState<Timeframe>("1M");
+  const [activeModel, setActiveModel] = useState<"lstm" | "prophet">("lstm");
 
   const { data: quote, isLoading: quoteLoading, error: quoteError } = useStockQuote(symbol);
   const { data: history, isLoading: historyLoading } = useStockHistory(symbol, timeframe);
+  const { data: predictionResult, isLoading: predictionLoading, error: predictionError } = useQuery({
+    queryKey: ["prediction", symbol, activeModel],
+    queryFn: () => predictionApi.predict(symbol, activeModel),
+    enabled: !!symbol,
+    staleTime: 60 * 60_000,
+    retry: 1,
+  });
+
+  const prediction = predictionResult?.data ?? null;
   const isUp = (quote?.change ?? 0) >= 0;
   const isVN = quote?.exchange === "HOSE" || quote?.exchange === "HNX";
   const currency = isVN ? "VND" : "USD";
@@ -181,10 +179,12 @@ export default function StockDetailPage() {
             value="fundamentals"
             className="data-[state=active]:bg-velo-lime data-[state=active]:text-[#0A0A0C] data-[state=active]:font-bold text-xs h-7"
           >
+            <BarChart2 className="w-3 h-3 mr-1" />
             Fundamentals
           </TabsTrigger>
         </TabsList>
 
+        {/* ── Overview ─────────────────────────────────────────── */}
         <TabsContent value="overview" className="space-y-4">
           {/* Chart */}
           <div className="rounded-2xl bg-[#141418] border border-[rgba(255,255,255,0.07)] p-5">
@@ -220,12 +220,12 @@ export default function StockDetailPage() {
             ) : history && history.length > 0 ? (
               <StockChart
                 data={history.map((h) => ({
-                  date: new Date(h.Date),
-                  open: Number(h.Open),
-                  high: Number(h.High),
-                  low: Number(h.Low),
-                  close: Number(h.Close),
-                  volume: Number(h.Volume),
+                  date: new Date(h.date),
+                  open: Number(h.open),
+                  high: Number(h.high),
+                  low: Number(h.low),
+                  close: Number(h.close),
+                  volume: Number(h.volume),
                 }))}
                 height={288}
                 currency={currency}
@@ -246,8 +246,8 @@ export default function StockDetailPage() {
               { label: "Prev Close", value: quote?.previousClose ? formatPrice(quote.previousClose) : "—" },
               { label: "Volume", value: quote?.volume ? formatLargeNum(quote.volume, currency) : "—" },
               { label: "Mkt Cap", value: quote?.marketCap ? formatLargeNum(quote.marketCap, currency) : "—" },
-              { label: "52W High", value: "—" },
-              { label: "52W Low", value: "—" },
+              { label: "52W High", value: quote?.week52High ? formatPrice(quote.week52High) : "—" },
+              { label: "52W Low", value: quote?.week52Low ? formatPrice(quote.week52Low) : "—" },
             ].map((stat) => (
               <div
                 key={stat.label}
@@ -262,76 +262,200 @@ export default function StockDetailPage() {
           </div>
         </TabsContent>
 
+        {/* ── AI Prediction ────────────────────────────────────── */}
         <TabsContent value="prediction" className="space-y-4">
           <div className="rounded-2xl bg-[#141418] border border-velo-indigo/20 p-5">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-8 h-8 rounded-lg bg-velo-indigo/10 flex items-center justify-center">
-                <Brain className="w-4 h-4 text-velo-indigo" />
+            {/* Header */}
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-lg bg-velo-indigo/10 flex items-center justify-center">
+                  <Brain className="w-4 h-4 text-velo-indigo" />
+                </div>
+                <div>
+                  <h2 className="text-base font-bold text-white">AI Price Forecast</h2>
+                  <p className="text-xs text-[#8A8A9A]">7-day prediction · {symbol}</p>
+                </div>
               </div>
-              <div>
-                <h2 className="text-base font-bold text-white">LSTM Forecast</h2>
-                <p className="text-xs text-[#8A8A9A]">7-day price prediction</p>
-              </div>
-              <div className="ml-auto flex items-center gap-2">
-                <span className="text-xs font-mono text-[#4A4A5A]">Model:</span>
-                <span className="text-xs font-bold text-velo-indigo bg-velo-indigo/10 px-2 py-0.5 rounded">
-                  LSTM
-                </span>
+
+              {/* Model selector */}
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-[#4A4A5A]">Model:</span>
+                <div className="flex bg-[#1E1E26] rounded-lg p-0.5 gap-0.5">
+                  {(["lstm", "prophet"] as const).map((m) => (
+                    <button
+                      key={m}
+                      onClick={() => setActiveModel(m)}
+                      className={cn(
+                        "px-3 py-1 text-[10px] font-bold rounded-md transition-all uppercase",
+                        activeModel === m
+                          ? "bg-velo-indigo text-white"
+                          : "text-[#8A8A9A] hover:text-white"
+                      )}
+                    >
+                      {m}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
 
-            <PredictionChart prediction={MOCK_PREDICTION} height={280} />
+            {predictionLoading ? (
+              <div className="h-72 rounded-xl bg-[#0A0A0C] flex flex-col items-center justify-center gap-3">
+                <div className="w-8 h-8 border-2 border-velo-indigo/30 border-t-velo-indigo rounded-full animate-spin" />
+                <p className="text-xs text-[#4A4A5A]">
+                  Running {activeModel.toUpperCase()} model for {symbol}...
+                </p>
+              </div>
+            ) : predictionError ? (
+              <div className="h-72 rounded-xl bg-[#0A0A0C] flex flex-col items-center justify-center gap-3 text-center px-8">
+                <AlertCircle className="w-8 h-8 text-velo-red/60" />
+                <p className="text-sm text-[#8A8A9A]">
+                  AI prediction unavailable for {symbol}. The ML service may be offline — try again shortly.
+                </p>
+              </div>
+            ) : prediction ? (
+              <>
+                <PredictionChart prediction={prediction} height={280} />
 
-            {/* Prediction table */}
-            <div className="mt-4 rounded-xl bg-[#0A0A0C] overflow-hidden">
-              <table className="w-full text-xs">
-                <thead>
-                  <tr className="border-b border-[rgba(255,255,255,0.06)]">
-                    <th className="text-left px-4 py-2 text-[#4A4A5A] font-bold uppercase tracking-widest">Date</th>
-                    <th className="text-right px-4 py-2 text-[#4A4A5A] font-bold uppercase tracking-widest">Predicted</th>
-                    <th className="text-right px-4 py-2 text-[#4A4A5A] font-bold uppercase tracking-widest">High</th>
-                    <th className="text-right px-4 py-2 text-[#4A4A5A] font-bold uppercase tracking-widest">Low</th>
-                    <th className="text-right px-4 py-2 text-[#4A4A5A] font-bold uppercase tracking-widest">Conf</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {MOCK_PREDICTION.predictions.map((p) => {
-                    const isUpFromCurrent = p.predictedPrice > MOCK_PREDICTION.currentPrice;
-                    return (
-                      <tr key={p.date} className="border-b border-[rgba(255,255,255,0.04)]">
-                        <td className="px-4 py-2 text-[#8A8A9A]">{p.date}</td>
-                        <td className={cn("px-4 py-2 text-right font-mono font-bold", isUpFromCurrent ? "text-velo-lime" : "text-velo-red")}>
-                          ${p.predictedPrice.toFixed(2)}
-                        </td>
-                        <td className="px-4 py-2 text-right font-mono text-velo-lime/70">
-                          ${p.upperBound.toFixed(2)}
-                        </td>
-                        <td className="px-4 py-2 text-right font-mono text-velo-red/70">
-                          ${p.lowerBound.toFixed(2)}
-                        </td>
-                        <td className="px-4 py-2 text-right">
-                          <span className={cn(
-                            "font-mono px-1.5 py-0.5 rounded",
-                            p.confidence >= 0.8 ? "bg-velo-lime/10 text-velo-lime" : "bg-velo-amber/10 text-velo-amber"
-                          )}>
-                            {(p.confidence * 100).toFixed(0)}%
-                          </span>
-                        </td>
+                {/* Prediction table */}
+                <div className="mt-4 rounded-xl bg-[#0A0A0C] overflow-hidden">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="border-b border-[rgba(255,255,255,0.06)]">
+                        <th className="text-left px-4 py-2 text-[#4A4A5A] font-bold uppercase tracking-widest">Date</th>
+                        <th className="text-right px-4 py-2 text-[#4A4A5A] font-bold uppercase tracking-widest">Predicted</th>
+                        <th className="text-right px-4 py-2 text-[#4A4A5A] font-bold uppercase tracking-widest">High</th>
+                        <th className="text-right px-4 py-2 text-[#4A4A5A] font-bold uppercase tracking-widest">Low</th>
+                        <th className="text-right px-4 py-2 text-[#4A4A5A] font-bold uppercase tracking-widest">Conf</th>
                       </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+                    </thead>
+                    <tbody>
+                      {prediction.predictions.map((p) => {
+                        const isUpFromCurrent = p.predictedPrice > prediction.currentPrice;
+                        return (
+                          <tr key={p.date} className="border-b border-[rgba(255,255,255,0.04)]">
+                            <td className="px-4 py-2 text-[#8A8A9A]">{p.date}</td>
+                            <td className={cn("px-4 py-2 text-right font-mono font-bold", isUpFromCurrent ? "text-velo-lime" : "text-velo-red")}>
+                              ${p.predictedPrice.toFixed(2)}
+                            </td>
+                            <td className="px-4 py-2 text-right font-mono text-velo-lime/70">
+                              ${p.upperBound.toFixed(2)}
+                            </td>
+                            <td className="px-4 py-2 text-right font-mono text-velo-red/70">
+                              ${p.lowerBound.toFixed(2)}
+                            </td>
+                            <td className="px-4 py-2 text-right">
+                              <span className={cn(
+                                "font-mono px-1.5 py-0.5 rounded",
+                                p.confidence >= 0.8 ? "bg-velo-lime/10 text-velo-lime" : "bg-velo-amber/10 text-velo-amber"
+                              )}>
+                                {(p.confidence * 100).toFixed(0)}%
+                              </span>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            ) : (
+              <div className="h-40 rounded-xl bg-[#0A0A0C] flex items-center justify-center text-[#4A4A5A] text-sm">
+                No prediction data available
+              </div>
+            )}
           </div>
         </TabsContent>
 
+        {/* ── Fundamentals ────────────────────────────────────── */}
         <TabsContent value="fundamentals">
-          <div className="rounded-2xl bg-[#141418] border border-[rgba(255,255,255,0.07)] p-5">
-            <p className="text-center text-[#8A8A9A] py-16">Fundamental data coming from Yahoo Finance API</p>
+          <div className="rounded-2xl bg-[#141418] border border-[rgba(255,255,255,0.07)] p-5 space-y-4">
+            <div className="flex items-center gap-2 mb-2">
+              <BarChart2 className="w-4 h-4 text-velo-lime" />
+              <h2 className="text-sm font-bold text-white">Fundamental Analysis</h2>
+              <span className="ml-auto text-[10px] text-[#4A4A5A]">Source: Yahoo Finance</span>
+            </div>
+
+            {quoteLoading ? (
+              <div className="space-y-3">
+                {[...Array(4)].map((_, i) => (
+                  <Skeleton key={i} className="h-16 w-full bg-[#1E1E26]" />
+                ))}
+              </div>
+            ) : (
+              <>
+                {/* Valuation */}
+                <FundamentalSection title="Valuation" icon={<DollarSign className="w-3.5 h-3.5" />}>
+                  <FundamentalRow label="P/E Ratio (TTM)" value={quote?.peRatio ? `${quote.peRatio.toFixed(2)}x` : "—"} />
+                  <FundamentalRow label="EPS (TTM)" value={quote?.eps ? `$${quote.eps.toFixed(2)}` : "—"} />
+                  <FundamentalRow label="Market Cap" value={quote?.marketCap ? formatLargeNum(quote.marketCap, currency) : "—"} />
+                  <FundamentalRow label="Div Yield" value={quote?.dividendYield ? `${(quote.dividendYield * 100).toFixed(2)}%` : "—"} />
+                </FundamentalSection>
+
+                {/* Price Range */}
+                <FundamentalSection title="52-Week Range" icon={<Activity className="w-3.5 h-3.5" />}>
+                  <FundamentalRow label="52-Week High" value={quote?.week52High ? formatPrice(quote.week52High) : "—"} />
+                  <FundamentalRow label="52-Week Low" value={quote?.week52Low ? formatPrice(quote.week52Low) : "—"} />
+                  <FundamentalRow label="Distance from High" value={
+                    quote?.week52High && quote?.price
+                      ? `${((1 - quote.price / quote.week52High) * 100).toFixed(1)}% below`
+                      : "—"
+                  } />
+                  <FundamentalRow label="Distance from Low" value={
+                    quote?.week52Low && quote?.price
+                      ? `${((quote.price / quote.week52Low - 1) * 100).toFixed(1)}% above`
+                      : "—"
+                  } />
+                </FundamentalSection>
+
+                {/* Session */}
+                <FundamentalSection title="Session" icon={<Clock className="w-3.5 h-3.5" />}>
+                  <FundamentalRow label="Open" value={quote?.open ? formatPrice(quote.open) : "—"} />
+                  <FundamentalRow label="Previous Close" value={quote?.previousClose ? formatPrice(quote.previousClose) : "—"} />
+                  <FundamentalRow label="Day High" value={quote?.high ? formatPrice(quote.high) : "—"} />
+                  <FundamentalRow label="Day Low" value={quote?.low ? formatPrice(quote.low) : "—"} />
+                </FundamentalSection>
+
+                {/* Volume */}
+                <FundamentalSection title="Volume" icon={<Zap className="w-3.5 h-3.5" />}>
+                  <FundamentalRow label="Volume" value={quote?.volume ? formatLargeNum(quote.volume, currency) : "—"} />
+                  <FundamentalRow label="Avg Volume" value={quote?.avgVolume ? formatLargeNum(quote.avgVolume, currency) : "—"} />
+                </FundamentalSection>
+              </>
+            )}
           </div>
         </TabsContent>
       </Tabs>
+    </div>
+  );
+}
+
+// ── Helpers ────────────────────────────────────────────────────────────────
+
+function FundamentalSection({ title, icon, children }: { title: string; icon: React.ReactNode; children: React.ReactNode }) {
+  return (
+    <div>
+      <div className="flex items-center gap-2 mb-2">
+        <span className="text-velo-lime">{icon}</span>
+        <h3 className="text-xs font-bold text-[#8A8A9A] uppercase tracking-widest">{title}</h3>
+      </div>
+      <div className="space-y-0.5">
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function FundamentalRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-center justify-between px-3 py-2 rounded-lg hover:bg-[#1E1E26]/50 transition-colors">
+      <span className="text-xs text-[#8A8A9A]">{label}</span>
+      <span className={cn(
+        "text-xs font-mono font-bold",
+        value === "—" ? "text-[#4A4A5A]" : "text-white"
+      )}>
+        {value}
+      </span>
     </div>
   );
 }

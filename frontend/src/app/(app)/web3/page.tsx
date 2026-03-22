@@ -7,6 +7,7 @@ import { PageHeader } from "@/components/features";
 import { MemecoinCard } from "@/components/features";
 import { Button } from "@/components/ui/button";
 import { memecoinApi } from "@/lib/api-client";
+import { useWallet } from "@/lib/useWallet";
 import type { Memecoin } from "@/lib/types";
 
 type SortTab = "trending" | "gainers" | "losers";
@@ -17,37 +18,39 @@ const FILTER_TABS: { key: SortTab; label: string }[] = [
   { key: "losers", label: "Top Losers" },
 ];
 
+const CHAIN_NAMES: Record<number, string> = {
+  1: "Ethereum",
+  11155111: "Sepolia",
+  137: "Polygon",
+  56: "BSC",
+  8453: "Base",
+};
+
+function formatAddress(address: string) {
+  return `${address.slice(0, 6)}...${address.slice(-4)}`;
+}
+
 export default function Web3Page() {
-  const [walletAddress, setWalletAddress] = useState<string | null>(null);
+  const {
+    address,
+    balance,
+    balanceUsd,
+    chainId,
+    isConnecting,
+    error,
+    connect,
+    disconnect,
+  } = useWallet();
+
   const [copied, setCopied] = useState(false);
-  const [connecting, setConnecting] = useState(false);
   const [activeTab, setActiveTab] = useState<SortTab>("trending");
   const [watchedCoins, setWatchedCoins] = useState<Set<string>>(
-    new Set(["dogecoin", "pepe", "ai16z", "bonk", "goatseus-maximus"])
+    new Set<string>(["dogecoin", "pepe", "ai16z", "bonk", "goatseus-maximus"])
   );
 
-  async function handleConnect() {
-    if (typeof window === "undefined" || !(window as Window & { ethereum?: unknown }).ethereum) {
-      alert("MetaMask not installed");
-      return;
-    }
-    setConnecting(true);
-    try {
-      const eth = (window as Window & { ethereum?: { request: (args: { method: string }) => Promise<string[]> } }).ethereum;
-      const accounts = await eth!.request({ method: "eth_requestAccounts" });
-      if (accounts.length > 0) setWalletAddress(accounts[0]);
-    } catch {
-      // user rejected
-    } finally {
-      setConnecting(false);
-    }
-  }
-
-  function handleDisconnect() { setWalletAddress(null); }
-
   function handleCopy() {
-    if (walletAddress) {
-      navigator.clipboard.writeText(walletAddress);
+    if (address) {
+      navigator.clipboard.writeText(address);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     }
@@ -63,7 +66,7 @@ export default function Web3Page() {
   }
 
   // ── CoinGecko API via backend ─────────────────────────────────────────────────
-  const { data: coins, isLoading, isFetching, error, refetch } = useQuery({
+  const { data: coins, isLoading, isFetching, error: coinError, refetch } = useQuery({
     queryKey: ["memecoins"],
     queryFn: () => memecoinApi.list({ pageSize: 50 }).then((r) => r.data ?? []),
     staleTime: 50_000,
@@ -117,37 +120,82 @@ export default function Web3Page() {
             <div className="px-5 py-4 border-b border-white/[0.07] flex items-center gap-2">
               <Wallet className="w-4 h-4 text-[#8B5CF6]" />
               <h2 className="text-sm font-medium text-[#F0F0F0]">Wallet</h2>
+              {address && (
+                <span className="ml-auto text-[9px] font-bold text-[#A3E635] flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-[#A3E635]" />
+                  CONNECTED
+                </span>
+              )}
             </div>
             <div className="px-5 py-5">
-              {walletAddress ? (
+              {address ? (
                 <div className="space-y-4">
+                  {/* Address */}
                   <div className="flex items-center gap-2 p-3 bg-[#0A0A0C] rounded-lg">
-                    <div className="w-6 h-6 rounded-full bg-[#6366F1]/20 flex items-center justify-center text-[#6366F1] text-xs font-bold">⟠</div>
-                    <span className="text-xs font-mono text-[#F0F0F0] flex-1 truncate">{walletAddress.slice(0, 6)}...{walletAddress.slice(-4)}</span>
-                    <span className="text-[9px] font-bold text-[#A3E635] flex items-center gap-1">
-                      <span className="w-1.5 h-1.5 rounded-full bg-[#A3E635]" />
-                      CONNECTED
+                    <div className="w-6 h-6 rounded-full bg-[#6366F1]/20 flex items-center justify-center text-[#6366F1] text-xs font-bold">
+                      ⟠
+                    </div>
+                    <span className="text-xs font-mono text-[#F0F0F0] flex-1 truncate">
+                      {formatAddress(address)}
                     </span>
                   </div>
-                  {[
-                    { label: "Ethereum ETH", amount: "2.451 ETH", usd: "$4,820.23" },
-                    { label: "USD Coin USDC", amount: "1,250.00", usd: "$1,250.00" },
-                    { label: "BNB Chain BNB", amount: "0.85", usd: "$512.42" },
-                  ].map((row) => (
-                    <div key={row.label} className="flex items-center justify-between p-3 bg-[#0A0A0C] rounded-lg">
-                      <span className="text-xs text-[#8A8A9A]">{row.label}</span>
+
+                  {/* ETH Balance */}
+                  {balance ? (
+                    <div className="flex items-center justify-between p-3 bg-[#0A0A0C] rounded-lg">
+                      <span className="text-xs text-[#8A8A9A]">ETH Balance</span>
                       <div className="text-right">
-                        <p className="text-sm font-mono font-medium text-[#F0F0F0]">{row.amount}</p>
-                        <p className="text-xs text-[#4A4A5A]">{row.usd}</p>
+                        <p className="text-sm font-mono font-medium text-[#F0F0F0]">
+                          {balance} ETH
+                        </p>
+                        {balanceUsd && (
+                          <p className="text-xs text-[#4A4A5A]">≈ ${balanceUsd}</p>
+                        )}
                       </div>
                     </div>
-                  ))}
+                  ) : isConnecting ? (
+                    <div className="p-3 bg-[#0A0A0C] rounded-lg text-center">
+                      <p className="text-xs text-[#4A4A5A]">Fetching balance...</p>
+                    </div>
+                  ) : (
+                    <div className="p-3 bg-[#0A0A0C] rounded-lg text-center">
+                      <p className="text-xs text-[#4A4A5A]">
+                        {error ?? "Balance unavailable"}
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Chain info */}
+                  {chainId && (
+                    <div className="flex items-center justify-between p-3 bg-[#0A0A0C] rounded-lg">
+                      <span className="text-xs text-[#8A8A9A]">Network</span>
+                      <span className="text-xs font-mono text-[#8A8A9A]">
+                        {CHAIN_NAMES[chainId] ?? `Chain ${chainId}`}
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Actions */}
                   <div className="flex gap-2">
-                    <Button variant="outline" size="sm" className="flex-1 h-8 border-white/[0.08] text-xs text-[#8A8A9A] hover:text-white" onClick={handleCopy}>
-                      {copied ? <Check className="w-3 h-3 mr-1" /> : <Copy className="w-3 h-3 mr-1" />}
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="flex-1 h-8 border-white/[0.08] text-xs text-[#8A8A9A] hover:text-white"
+                      onClick={handleCopy}
+                    >
+                      {copied ? (
+                        <Check className="w-3 h-3 mr-1" />
+                      ) : (
+                        <Copy className="w-3 h-3 mr-1" />
+                      )}
                       {copied ? "Copied!" : "Copy"}
                     </Button>
-                    <Button variant="outline" size="sm" className="flex-1 h-8 border-[#F05252]/20 text-[#F05252] hover:bg-[#F05252]/10" onClick={handleDisconnect}>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="flex-1 h-8 border-[#F05252]/20 text-[#F05252] hover:bg-[#F05252]/10"
+                      onClick={disconnect}
+                    >
                       <Trash2 className="w-3 h-3 mr-1" />
                       Disconnect
                     </Button>
@@ -157,14 +205,16 @@ export default function Web3Page() {
                 <div className="text-center py-4">
                   <Wallet className="w-12 h-12 mx-auto mb-3 text-[#4A4A5A]" />
                   <p className="text-sm font-medium text-[#F0F0F0] mb-1">No wallet connected</p>
-                  <p className="text-xs text-[#4A4A5A] mb-4">Connect your MetaMask to view balances and manage tokens</p>
+                  <p className="text-xs text-[#4A4A5A] mb-4">
+                    Connect your MetaMask to view balances and manage tokens
+                  </p>
                   <Button
                     className="w-full h-10 bg-[#8B5CF6] hover:bg-[#8B5CF6]/90 text-white font-semibold text-sm"
-                    onClick={handleConnect}
-                    disabled={connecting}
+                    onClick={connect}
+                    disabled={isConnecting}
                   >
                     <Wallet className="w-4 h-4 mr-2" />
-                    Connect MetaMask
+                    {isConnecting ? "Connecting..." : "Connect MetaMask"}
                   </Button>
                 </div>
               )}
@@ -181,18 +231,28 @@ export default function Web3Page() {
             </div>
             <div className="px-5 py-3 space-y-1">
               {allCoins.filter((c) => watchedCoins.has(c.id)).length === 0 && (
-                <p className="text-xs text-[#4A4A5A] text-center py-4">No coins in watchlist — tap ★ on any coin</p>
+                <p className="text-xs text-[#4A4A5A] text-center py-4">
+                  No coins in watchlist — tap ★ on any coin
+                </p>
               )}
               {allCoins.filter((c) => watchedCoins.has(c.id)).map((coin) => (
-                <div key={coin.id} className="flex items-center gap-2 py-2 px-2 rounded-lg hover:bg-white/[0.03] cursor-pointer">
+                <div
+                  key={coin.id}
+                  className="flex items-center gap-2 py-2 px-2 rounded-lg hover:bg-white/[0.03] cursor-pointer"
+                >
                   <div className="w-7 h-7 rounded-full bg-[#2a1a2e] flex items-center justify-center text-[10px] font-mono font-bold text-[#8B5CF6] overflow-hidden">
                     {coin.image ? (
                       <img src={coin.image} alt={coin.symbol} className="w-7 h-7 rounded-full object-cover" />
                     ) : coin.symbol.slice(0, 2)}
                   </div>
                   <span className="text-sm font-mono text-[#F0F0F0] flex-1">{coin.symbol}</span>
-                  <span className={`text-sm font-mono ${coin.change24h >= 0 ? "text-[#A3E635]" : "text-[#F05252]"}`}>
-                    {coin.change24h >= 0 ? "+" : ""}{coin.change24h.toFixed(1)}%
+                  <span
+                    className={`text-sm font-mono ${
+                      coin.change24h >= 0 ? "text-[#A3E635]" : "text-[#F05252]"
+                    }`}
+                  >
+                    {coin.change24h >= 0 ? "+" : ""}
+                    {coin.change24h.toFixed(1)}%
                   </span>
                   <button
                     onClick={() => toggleWatch(coin.id)}
@@ -206,9 +266,9 @@ export default function Web3Page() {
           </div>
 
           {/* Error state */}
-          {error && (
+          {coinError && (
             <div className="p-3 rounded-xl bg-[#F05252]/10 border border-[#F05252]/20 text-xs text-[#F05252]">
-              Could not load memecoins: {error.message}. Start the backend (see README) and refresh; CoinGecko fallbacks apply only after the API responds.
+              Could not load memecoins: {coinError.message}. Start the backend (see README) and refresh.
             </div>
           )}
         </div>
@@ -241,7 +301,10 @@ export default function Web3Page() {
           {isLoading ? (
             <div className="grid grid-cols-2 gap-3">
               {Array.from({ length: 8 }).map((_, i) => (
-                <div key={i} className="bg-[#141418] border border-white/[0.07] rounded-xl p-4 animate-pulse">
+                <div
+                  key={i}
+                  className="bg-[#141418] border border-white/[0.07] rounded-xl p-4 animate-pulse"
+                >
                   <div className="flex items-center gap-2 mb-3">
                     <div className="w-9 h-9 rounded-full bg-[#1E1E26]" />
                     <div className="flex-1 space-y-1">
@@ -261,18 +324,31 @@ export default function Web3Page() {
                   key={coin.id}
                   symbol={coin.symbol}
                   name={coin.name}
-                  price={coin.price < 0.0001 ? `$${coin.price.toExponential(2)}` :
-                         coin.price < 0.01   ? `$${coin.price.toFixed(6)}` :
-                         coin.price < 1       ? `$${coin.price.toFixed(4)}` :
-                         `$${coin.price.toFixed(2)}`}
+                  price={
+                    coin.price < 0.0001
+                      ? `$${coin.price.toExponential(2)}`
+                      : coin.price < 0.01
+                      ? `$${coin.price.toFixed(6)}`
+                      : coin.price < 1
+                      ? `$${coin.price.toFixed(4)}`
+                      : `$${coin.price.toFixed(2)}`
+                  }
                   change={`${coin.change24h >= 0 ? "+" : ""}${coin.change24h.toFixed(2)}%`}
                   positive={coin.change24h >= 0}
-                  mcap={coin.marketCap >= 1_000_000_000 ? `$${(coin.marketCap / 1_000_000_000).toFixed(1)}B` :
-                         coin.marketCap >= 1_000_000       ? `$${(coin.marketCap / 1_000_000).toFixed(1)}M` :
-                         `$${coin.marketCap.toFixed(0)}`}
-                  vol={coin.volume24h >= 1_000_000_000 ? `$${(coin.volume24h / 1_000_000_000).toFixed(1)}B` :
-                       coin.volume24h >= 1_000_000       ? `$${(coin.volume24h / 1_000_000).toFixed(1)}M` :
-                       `$${coin.volume24h.toFixed(0)}`}
+                  mcap={
+                    coin.marketCap >= 1_000_000_000
+                      ? `$${(coin.marketCap / 1_000_000_000).toFixed(1)}B`
+                      : coin.marketCap >= 1_000_000
+                      ? `$${(coin.marketCap / 1_000_000).toFixed(1)}M`
+                      : `$${coin.marketCap.toFixed(0)}`
+                  }
+                  vol={
+                    coin.volume24h >= 1_000_000_000
+                      ? `$${(coin.volume24h / 1_000_000_000).toFixed(1)}B`
+                      : coin.volume24h >= 1_000_000
+                      ? `$${(coin.volume24h / 1_000_000).toFixed(1)}M`
+                      : `$${coin.volume24h.toFixed(0)}`
+                  }
                   image={coin.image}
                   inWatchlist={watchedCoins.has(coin.id)}
                   onToggleWatchlist={() => toggleWatch(coin.id)}

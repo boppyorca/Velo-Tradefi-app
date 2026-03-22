@@ -163,12 +163,12 @@ class NumPyLSTM:
 
         rng = np.random.RandomState(seed)
 
-        # Weights
-        scale = lambda n: rng.randn(n, n).astype(np.float32) * np.sqrt(2.0 / n)
-        self.Wf = rng.randn(hidden_size, hidden_size + input_size).astype(np.float32) * 0.1
-        self.Wi = rng.randn(hidden_size, hidden_size + input_size).astype(np.float32) * 0.1
-        self.Wc = rng.randn(hidden_size, hidden_size + input_size).astype(np.float32) * 0.1
-        self.Wo = rng.randn(hidden_size, hidden_size + input_size).astype(np.float32) * 0.1
+        # input_size=1: LSTM processes ONE scalar feature per timestep
+        # Weights: (hidden, hidden + input_size=1) = (hidden, hidden+1)
+        self.Wf = rng.randn(hidden_size, hidden_size + 1).astype(np.float32) * 0.1
+        self.Wi = rng.randn(hidden_size, hidden_size + 1).astype(np.float32) * 0.1
+        self.Wc = rng.randn(hidden_size, hidden_size + 1).astype(np.float32) * 0.1
+        self.Wo = rng.randn(hidden_size, hidden_size + 1).astype(np.float32) * 0.1
         self.Wy = rng.randn(output_size, hidden_size).astype(np.float32) * 0.1
         self.by = np.zeros(output_size, dtype=np.float32)
 
@@ -190,33 +190,60 @@ class NumPyLSTM:
         return self.h, self.c
 
     def forward(self, X: np.ndarray) -> np.ndarray:
+        """X is (num_timesteps,) array. Run LSTM over timesteps and return scalar output."""
         self.h = np.zeros(self.hidden_size, dtype=np.float32)
         self.c = np.zeros(self.hidden_size, dtype=np.float32)
-        for t in range(X.shape[0]):
-            x_t = X[t]
+        # Flatten to 1D if needed
+        Xflat = np.asarray(X).flatten()
+        for t in range(len(Xflat)):
+            x_t = np.array([Xflat[t]], dtype=np.float32)
             self.lstm_step(x_t)
-        return self.Wy @ self.h + self.by
+        out = self.Wy @ self.h + self.by
+        return np.atleast_1d(out)
 
     def predict_next(self, X: np.ndarray) -> float:
-        output = self.forward(X)
-        return float(np.tanh(output[0]))
+        # X is a single 1-D array of shape (lookback,)
+        # Reshape to (1, lookback) and process only the last time step
+        X = X.reshape(1, -1)  # (1, lookback)
+        self.h = np.zeros(self.hidden_size, dtype=np.float32)
+        self.c = np.zeros(self.hidden_size, dtype=np.float32)
+        # Process each element of the window
+        for t in range(X.shape[1]):
+            x_t = X[0, t : t + 1]  # scalar
+            self.lstm_step(x_t)
+        return float(np.tanh(self.Wy @ self.h + self.by)[0])
 
     def train(self, X_train: np.ndarray, y_train: np.ndarray,
               epochs: int = 20, lr: float = 0.01, verbose: bool = False) -> list[float]:
         losses = []
+        n_samples = X_train.shape[0]
         for epoch in range(epochs):
-            # Simple SGD over the full sequence
-            output = self.forward(X_train)
-            loss = np.mean((output - y_train) ** 2)
-            losses.append(float(loss))
-
-            # Gradient approximation (simplified — real impl would use BPTT)
-            grad = 2 * (output - y_train)
-            self.Wy -= lr * np.outer(grad, self.h)
-            self.by -= lr * grad
-
+            total_loss = 0.0
+            # Shuffle
+            perm = np.random.permutation(n_samples)
+            X_shuffled = X_train[perm]
+            y_shuffled = y_train[perm]
+            for j in range(n_samples):
+                x_j = X_shuffled[j]  # 1-D array of shape (lookback,)
+                y_j = np.array([y_shuffled[j]], dtype=np.float32)  # scalar
+                # Forward on single sample
+                self.h = np.zeros(self.hidden_size, dtype=np.float32)
+                self.c = np.zeros(self.hidden_size, dtype=np.float32)
+                Xflat = np.asarray(x_j).flatten()
+                for t in range(len(Xflat)):
+                    x_t = np.array([Xflat[t]], dtype=np.float32)
+                    self.lstm_step(x_t)
+                output = self.Wy @ self.h + self.by  # (1,)
+                loss = np.mean((output - y_j) ** 2)
+                total_loss += loss
+                # Gradient of MSE: scalar gradient * hidden state
+                grad = 2.0 * (output[0] - y_j[0])  # scalar
+                self.Wy -= lr * np.outer(grad, self.h).reshape(1, -1)  # (1, hidden)
+                self.by -= lr * grad  # scalar
+            avg_loss = total_loss / n_samples
+            losses.append(float(avg_loss))
             if verbose and epoch % 5 == 0:
-                logger.info(f"  Epoch {epoch}: loss={loss:.6f}")
+                logger.info(f"  Epoch {epoch}: loss={avg_loss:.6f}")
         return losses
 
 # ── LSTM Model wrapper ────────────────────────────────────────────────────────

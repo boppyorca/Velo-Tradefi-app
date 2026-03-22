@@ -23,15 +23,21 @@ export interface StockQuote extends Stock {
   high: number;
   low: number;
   previousClose: number;
+  week52High?: number;
+  week52Low?: number;
+  peRatio?: number;
+  dividendYield?: number;
+  avgVolume?: number;
+  eps?: number;
 }
 
 export interface StockHistoryPoint {
-  Date: string;
-  Open: number;
-  High: number;
-  Low: number;
-  Close: number;
-  Volume: number;
+  date: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
 }
 
 export interface Prediction {
@@ -102,6 +108,16 @@ export interface AppSettings {
   notifications: boolean;
   refreshInterval: number;
   defaultMarket: "VN" | "US";
+}
+
+export interface WatchlistItem {
+  id: string;
+  symbol: string;
+  market: "VN" | "US";
+  addedAt: string;
+  price: number;
+  changePercent: number;
+  name: string;
 }
 
 // API response types

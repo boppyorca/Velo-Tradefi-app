@@ -1,63 +1,215 @@
 namespace FinAI.Infrastructure.Services;
 
+using System.Collections.Concurrent;
+using System.Net.Http.Json;
+using System.Text.Json;
 using FinAI.Core.Interfaces;
 using FinAI.Core.Models;
+using Microsoft.Extensions.Logging;
 
 public class NewsService : INewsService
 {
-    private static readonly List<NewsItemDto> _mockNews =
-    [
-        new NewsItemDto("1", "NVIDIA announces next-gen AI chips at GTC 2026, targets $500B market",
-            "Jensen Huang reveals Blackwell Ultra architecture at annual developer conference, promising 3x performance improvement for LLM training workloads.",
-            "TechCrunch", "https://techcrunch.com", DateTime.UtcNow.AddHours(-1), null, "ai"),
-        new NewsItemDto("2", "Bitcoin breaks $67K amid record ETF inflow surge of $1.2B in single day",
-            "Spot Bitcoin ETFs recorded unprecedented daily inflows as institutional adoption accelerates following favorable regulatory signals.",
-            "CoinDesk", "https://coindesk.com", DateTime.UtcNow.AddHours(-2), null, "crypto"),
-        new NewsItemDto("3", "Fed holds rates at 4.25-4.50%, signals two cuts in 2026 as inflation cools",
-            "Federal Reserve maintains current range while updating dot plot projections. Markets rally on dovish tone.",
-            "Reuters", "https://reuters.com", DateTime.UtcNow.AddHours(-3), null, "stock"),
-        new NewsItemDto("4", "OpenAI releases GPT-5 with native multimodal reasoning at human expert level",
-            "The latest model achieves PhD-level performance across science, math, and coding benchmarks while reducing hallucinations by 80%.",
-            "The Verge", "https://theverge.com", DateTime.UtcNow.AddHours(-4), null, "ai"),
-        new NewsItemDto("5", "Apple Vision Pro 2 specs leaked: M5 chip, improved display, $2,499 starting price",
-            "Apple's next spatial computing headset features significantly improved resolution and weight reduction, analyst Ming-Chi Kuo reports.",
-            "MacRumors", "https://macrumors.com", DateTime.UtcNow.AddHours(-5), null, "tech"),
-        new NewsItemDto("6", "Ethereum ETF staking approval expected Q2 2026, could unlock $10B in yield",
-            "SEC reportedly reconsidering stance on staking rewards for Ethereum ETF products following BlackRock and Fidelity applications.",
-            "Decrypt", "https://decrypt.co", DateTime.UtcNow.AddHours(-6), null, "crypto"),
-        new NewsItemDto("7", "TSLA stock drops 8% after Q1 deliveries miss estimates by 12%",
-            "Tesla delivered 355,000 vehicles in Q1, falling short of analyst consensus of 403,000 amid increasing EV competition.",
-            "Bloomberg", "https://bloomberg.com", DateTime.UtcNow.AddHours(-7), null, "stock"),
-        new NewsItemDto("8", "Anthropic raises $3.5B at $61B valuation, largest AI funding round ever",
-            "The Claude maker secures mega-round led by Google and Amazon, bringing total raised to $7.5B with plans to scale safety research.",
-            "FT", "https://ft.com", DateTime.UtcNow.AddHours(-8), null, "ai"),
-        new NewsItemDto("9", "Google DeepMind AlphaFold 3 predicts full cellular interactome for first time",
-            "The breakthrough AI system models all protein interactions in a human cell, potentially accelerating drug discovery by 10x.",
-            "Nature", "https://nature.com", DateTime.UtcNow.AddHours(-9), null, "ai"),
-        new NewsItemDto("10", "Solana memecoin season 2.0: $4B in new token launches in single week",
-            "Solana network sees unprecedented memecoin activity with AI-themed tokens dominating. DOGE and SHIB alternatives surge.",
-            "CoinGecko", "https://coingecko.com", DateTime.UtcNow.AddHours(-10), null, "crypto"),
-        new NewsItemDto("11", "Microsoft Copilot+ PC sales exceed expectations, Windows market share rises",
-            "Qualcomm Snapdragon X-powered devices sell out in major markets. Microsoft reports 40% increase in Copilot usage.",
-            "The Verge", "https://theverge.com", DateTime.UtcNow.AddHours(-11), null, "tech"),
-        new NewsItemDto("12", "NVIDIA stock surges to all-time high, briefly becomes world's most valuable company",
-            "AI chip demand pushes NVIDIA market cap to $3.1T, surpassing Microsoft and Apple in early trading.",
-            "Bloomberg", "https://bloomberg.com", DateTime.UtcNow.AddHours(-12), null, "stock"),
-    ];
+    private readonly HttpClient _httpClient;
+    private readonly ILogger<NewsService> _logger;
 
-    public Task<IEnumerable<NewsItemDto>> GetNewsAsync(string? category = null, int page = 1, int pageSize = 20)
+    // In-memory cache: (category, page) → (items, expiry)
+    private static readonly ConcurrentDictionary<string, (IEnumerable<NewsItemDto> Items, DateTime ExpiresAt)> _cache = new();
+    private static readonly TimeSpan CacheTtl = TimeSpan.FromMinutes(5);
+
+    // Keyword-based category classification (order matters: specific → generic)
+    // Using word boundaries to avoid false positives
+    private static readonly Dictionary<string, string[]> _categoryKeywords = new()
     {
-        var query = _mockNews.AsEnumerable();
+        // AI/ML — must be specific AI terms
+        ["ai"]     = [
+            " ai ", "artificial intelligence", "machine learning", "deep learning",
+            "neural network", "openai", "anthropic", "deepmind", "chatgpt",
+            "gpt-", "gemini ", "claude ", "mistral ", "llama ", "groq ",
+            "langchain", "lang smith", "copilot ", "hugging face", "transformer",
+            "sora ", "stable diffusion", "midjourney", "dall-e",
+            "embeddin", "vector db", "vq-", "vqgan", "diffusion model",
+            "llm ", "large language", "multimodal ai", "reasoning model",
+            "open router", "together ai", "anyscale", "replicate",
+            "benchmark", "agentic", "reasoning chain",
+        ],
+        // Crypto — specific crypto/blockchain terms
+        ["crypto"] = [
+            "bitcoin", "ethereum", "solana blockchain", "defi ", "nft ",
+            "blockchain ", "binance", "coinbase", "cryptocurrency",
+            "memecoin", "dogecoin", "shiba inu", "ordinal ", "rollup ",
+            "stablecoin", "web3 ", "crypto token", "crypto exchange",
+            "proof-of-", "tokenomics", "airdrops", "ico ",
+            "exchange hack", "crypto regulation", "crypto etf",
+            "staking ", "layer 2", "l2 ", "smart contract platform",
+        ],
+        // Stock/Finance — specific financial news
+        ["stock"]  = [
+            "federal reserve", "fed rate", "interest rate hike",
+            "inflation report", "cpi ", "ppi ", "gdp growth",
+            "earnings season", "sec investigation", "antitrust ",
+            "buyback ", "dividend ", "merger deal", "acquisition offer",
+            "wall street", "sp 500", "nasdaq composite", "treasury yield",
+        ],
+        // Tech — company/product/product news (generic fallback)
+        ["tech"]   = [
+            "apple ", "google deepmind", "meta ai", "meta quest",
+            "amazon aws", "amazon prime", "microsoft azure", "github copilot",
+            "tesla deliveries", "spacex launch", "startup raises",
+            "series a", "series b", "funding round", "product launch",
+            "ios ", "android ", "windows ", "macos ", "linux ",
+            "chip shortage", "asml ", "tsmc ", "qualcomm ",
+            "cybersecurity", "data breach", "zero-day",
+        ],
+    };
 
-        if (!string.IsNullOrWhiteSpace(category) && category != "all")
+    public NewsService(HttpClient httpClient, ILogger<NewsService> logger)
+    {
+        _httpClient = httpClient;
+        _httpClient.BaseAddress = new Uri("https://hacker-news.firebaseio.com/v0/");
+        _httpClient.Timeout = TimeSpan.FromSeconds(15);
+        _logger = logger;
+    }
+
+    public async Task<IEnumerable<NewsItemDto>> GetNewsAsync(string? category = null, int page = 1, int pageSize = 20)
+    {
+        var cacheKey = $"news:{category ?? "all"}:{page}";
+
+        if (_cache.TryGetValue(cacheKey, out var cached) && cached.ExpiresAt > DateTime.UtcNow)
         {
-            query = query.Where(n => n.Category.Equals(category, StringComparison.OrdinalIgnoreCase));
+            _logger.LogDebug("Cache hit for {CacheKey}", cacheKey);
+            return cached.Items;
         }
 
-        var data = query
-            .Skip((page - 1) * pageSize)
-            .Take(pageSize);
+        try
+        {
+            var stories = await FetchHackerNewsStoriesAsync();
 
-        return Task.FromResult<IEnumerable<NewsItemDto>>(data);
+            // Filter by category if specified
+            if (!string.IsNullOrWhiteSpace(category) && category != "all")
+            {
+                stories = stories.Where(s =>
+                    s.Category.Equals(category, StringComparison.OrdinalIgnoreCase)).ToList();
+            }
+
+            var paged = stories
+                .Skip((page - 1) * pageSize)
+                .Take(pageSize)
+                .ToList();
+
+            _cache[cacheKey] = (paged.AsEnumerable(), DateTime.UtcNow.Add(CacheTtl));
+
+            return paged;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to fetch news from HackerNews, returning cached if available");
+
+            // Return cached items even if expired as fallback
+            if (_cache.TryGetValue(cacheKey, out var fallback))
+                return fallback.Items;
+
+            return Enumerable.Empty<NewsItemDto>();
+        }
+    }
+
+    private async Task<List<NewsItemDto>> FetchHackerNewsStoriesAsync()
+    {
+        // Fetch from top stories (most active/popular)
+        var idsResponse = await _httpClient.GetAsync("topstories.json");
+        idsResponse.EnsureSuccessStatusCode();
+        var ids = await idsResponse.Content.ReadFromJsonAsync<List<int>>();
+
+        if (ids is null || ids.Count == 0)
+            return new List<NewsItemDto>();
+
+        // Take top 60 for better category coverage
+        var topIds = ids.Take(60).ToList();
+        var stories = new List<NewsItemDto>();
+
+        // Fetch in parallel batches
+        var tasks = topIds.Select(FetchStoryAsync);
+        var results = await Task.WhenAll(tasks);
+
+        foreach (var story in results.Where(s => s is not null))
+        {
+            stories.Add(story!);
+        }
+
+        // Sort by score descending (most popular first)
+        return stories
+            .OrderByDescending(s => s.PublishedAt)
+            .ToList();
+    }
+
+    private async Task<NewsItemDto?> FetchStoryAsync(int id)
+    {
+        try
+        {
+            var response = await _httpClient.GetAsync($"item/{id}.json");
+            if (!response.IsSuccessStatusCode) return null;
+
+            var json = await response.Content.ReadAsStringAsync();
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+
+            if (root.TryGetProperty("deleted", out var del) && del.GetBoolean())
+                return null;
+            if (root.TryGetProperty("dead", out var dead) && dead.GetBoolean())
+                return null;
+            if (!root.TryGetProperty("title", out var titleProp))
+                return null;
+
+            var title = titleProp.GetString() ?? "";
+            var url = root.TryGetProperty("url", out var urlProp)
+                ? urlProp.GetString() ?? ""
+                : $"https://news.ycombinator.com/item?id={id}";
+            var by = root.TryGetProperty("by", out var byProp) ? byProp.GetString() ?? "unknown" : "unknown";
+            var score = root.TryGetProperty("score", out var scoreProp) ? scoreProp.GetInt32() : 0;
+            var time = root.TryGetProperty("time", out var timeProp) ? timeProp.GetInt32() : 0;
+            var descendants = root.TryGetProperty("descendants", out var descProp) ? descProp.GetInt32() : 0;
+            var idStr = id.ToString();
+
+            var category = ClassifyCategory(title);
+            var publishedAt = time > 0
+                ? DateTimeOffset.FromUnixTimeSeconds(time).UtcDateTime
+                : DateTime.UtcNow;
+
+            var summary = BuildSummary(title, score, descendants, by);
+
+            return new NewsItemDto(
+                Id: idStr,
+                Title: title,
+                Summary: summary,
+                Source: "HackerNews",
+                Url: url,
+                PublishedAt: publishedAt,
+                ImageUrl: null,
+                Category: category
+            );
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private string ClassifyCategory(string title)
+    {
+        var lower = title.ToLowerInvariant();
+
+        foreach (var (cat, keywords) in _categoryKeywords)
+        {
+            if (keywords.Any(kw => lower.Contains(kw)))
+                return cat;
+        }
+
+        return "tech";
+    }
+
+    private string BuildSummary(string title, int score, int comments, string author)
+    {
+        if (comments > 0)
+            return $"{score} points · {comments} comments · by {author} · {title}";
+        return $"{score} points · by {author}";
     }
 }

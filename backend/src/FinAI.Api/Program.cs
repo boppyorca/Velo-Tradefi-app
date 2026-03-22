@@ -74,18 +74,28 @@ builder.Services.AddSwaggerGen(options =>
 });
 
 // ── Database Configuration ────────────────────────────────────────────────────────
-// NOTE: .NET 10 + Npgsql 8.x have compatibility issues.
-// For local development: Use InMemory database
-// For production deployment (.NET 8): Use PostgreSQL with Npgsql
+var dbConnectionString = Environment.GetEnvironmentVariable("DATABASE_URL");
+var usePostgres = !string.IsNullOrEmpty(dbConnectionString);
+
 builder.Services.AddDbContext<AppDbContext>(options =>
 {
-    options.UseInMemoryDatabase("FinAI-Dev-InMemory");
+    if (usePostgres)
+    {
+        // Use PostgreSQL (Supabase or any Postgres provider)
+        options.UseNpgsql(dbConnectionString);
+        Console.WriteLine($"Using PostgreSQL database: {Regex.Replace(dbConnectionString, @"://([^:]+):([^@]+)@", "://$1:****@")}");
+    }
+    else
+    {
+        // Use InMemory database for local development without Supabase
+        options.UseInMemoryDatabase("FinAI-Dev-InMemory");
+        Console.WriteLine("Using InMemory database for development");
+    }
     if (builder.Environment.IsDevelopment())
     {
         options.EnableSensitiveDataLogging();
     }
 });
-Console.WriteLine("Using InMemory database for development");
 
 // ── JWT Authentication ─────────────────────────────────────────────────────────
 // Supports both Supabase Auth JWT and custom JWT
@@ -217,6 +227,7 @@ if (!string.IsNullOrEmpty(redisUrl))
 
 // ── Dependency Injection ────────────────────────────────────────────────────────
 builder.Services.AddScoped<IUserRepository, UserRepository>();
+builder.Services.AddScoped<IWatchlistRepository, WatchlistRepository>();
 builder.Services.AddScoped<IStockService>(sp =>
 {
     var httpFactory = sp.GetRequiredService<IHttpClientFactory>();
@@ -239,8 +250,15 @@ builder.Services.AddScoped<IMemecoinService>(sp =>
     var logger = sp.GetRequiredService<ILogger<MemecoinService>>();
     return new MemecoinService(http, logger);
 });
-builder.Services.AddScoped<INewsService, NewsService>();
-builder.Services.AddScoped<IWeb3Service, Web3Service>();
+builder.Services.AddHttpClient<INewsService, NewsService>(client =>
+{
+    client.BaseAddress = new Uri("https://hacker-news.firebaseio.com/v0/");
+    client.Timeout = TimeSpan.FromSeconds(15);
+});
+builder.Services.AddHttpClient<IWeb3Service, Web3Service>(client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(10);
+});
 
 // ── Program ────────────────────────────────────────────────────────────────────
 var app = builder.Build();

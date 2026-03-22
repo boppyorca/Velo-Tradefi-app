@@ -1,7 +1,7 @@
 "use client";
 
 import type { NewsItem } from "@/lib/types";
-import { Clock, ExternalLink } from "lucide-react";
+import { Clock, ExternalLink, MessageSquare, ArrowUp } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface NewsCardProps {
@@ -23,8 +23,26 @@ function timeAgo(dateStr: string): string {
   return `${Math.floor(diff / 86400)}d ago`;
 }
 
+function parseMetaFromSummary(summary: string): { score: number; comments: number; author: string } | null {
+  // Format: "{score} points · {comments} comments · by {author} · {title}" or "by {author}"
+  const scoreMatch = summary.match(/^([\d,]+)\s*points/);
+  const commentsMatch = summary.match(/([\d,]+)\s*comments/);
+  const byMatch = summary.match(/by\s+([^\s]+)/);
+  return {
+    score: scoreMatch ? parseInt(scoreMatch[1].replace(",", "")) : 0,
+    comments: commentsMatch ? parseInt(commentsMatch[1].replace(",", "")) : 0,
+    author: byMatch ? byMatch[1] : "",
+  };
+}
+
 export function NewsCard({ news }: NewsCardProps) {
   const style = CATEGORY_STYLES[news.category] ?? { bg: "bg-[#1E1E26]", text: "text-[#8A8A9A]", label: news.category.toUpperCase() };
+  const meta = parseMetaFromSummary(news.summary);
+  const isAskOrShow = !news.url.includes("ycombinator.com") === false || news.title.startsWith("Ask HN") || news.title.startsWith("Show HN");
+
+  // Determine if URL is a real external link or HN comments page
+  const isHNComments = news.url.includes("news.ycombinator.com/item");
+  const linkLabel = isHNComments ? "View discussion" : "Read full article";
 
   return (
     <a
@@ -34,7 +52,7 @@ export function NewsCard({ news }: NewsCardProps) {
       className="group relative block p-5 rounded-xl bg-[#141418] border border-white/[0.07] hover:border-white/[0.15] hover:bg-[#1A1A20] transition-all cursor-pointer h-full flex flex-col"
     >
       {/* Top row */}
-      <div className="flex items-center gap-2 mb-3">
+      <div className="flex items-center gap-2 mb-3 flex-shrink-0">
         <span className={cn("text-[9px] font-bold px-1.5 py-0.5 rounded", style.bg, style.text)}>
           {style.label}
         </span>
@@ -44,32 +62,50 @@ export function NewsCard({ news }: NewsCardProps) {
           {timeAgo(news.publishedAt)}
         </span>
         <span className="flex-1" />
-        {/* External link icon — shows this opens in new tab */}
+        {/* External link icon */}
         <span className="text-[#4A4A5A] group-hover:text-[#A3E635] transition-colors">
           <ExternalLink className="w-3.5 h-3.5" />
         </span>
       </div>
 
       {/* Title */}
-      <h3 className="text-sm font-medium text-[#F0F0F0] leading-relaxed mb-2 flex-1 group-hover:text-[#A3E635] transition-colors line-clamp-2">
+      <h3 className="text-sm font-medium text-[#F0F0F0] leading-relaxed mb-3 flex-shrink-0 group-hover:text-[#A3E635] transition-colors">
         {news.title}
       </h3>
 
-      {/* Excerpt */}
-      <p className="text-xs text-[#8A8A9A] leading-relaxed line-clamp-2 mb-3">
-        {news.summary}
-      </p>
+      {/* Meta row: score + comments */}
+      {meta && (meta.score > 0 || meta.comments > 0) && (
+        <div className="flex items-center gap-3 mb-3 mt-auto">
+          {meta.score > 0 && (
+            <div className="flex items-center gap-1 text-[#A3E635]">
+              <ArrowUp className="w-3 h-3" />
+              <span className="text-xs font-mono font-medium">{meta.score}</span>
+            </div>
+          )}
+          {meta.comments > 0 && (
+            <div className="flex items-center gap-1 text-[#8A8A9A]">
+              <MessageSquare className="w-3 h-3" />
+              <span className="text-xs font-mono">{meta.comments}</span>
+            </div>
+          )}
+          {meta.author && (
+            <div className="flex items-center gap-1 text-[#8A8A9A]">
+              <span className="text-[11px]">by {meta.author}</span>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Source */}
-      <div className="flex items-center gap-1.5 mt-auto">
+      <div className="flex items-center gap-1.5 mt-auto flex-shrink-0">
         <div className="w-4 h-4 rounded-sm bg-[#1E1E26] flex items-center justify-center text-[8px] text-[#4A4A5A] font-mono font-bold">
-          {news.source.slice(0, 2).toUpperCase()}
+          HN
         </div>
-        <span className="text-[11px] text-[#4A4A5A]">{news.source}</span>
+        <span className="text-[11px] text-[#4A4A5A]">Hacker News</span>
         <span className="flex-1" />
-        {/* "Read full article" hint */}
+        {/* Read hint */}
         <span className="text-[10px] text-[#4A4A5A] group-hover:text-[#A3E635] transition-colors flex items-center gap-0.5">
-          Read full
+          {linkLabel}
           <ExternalLink className="w-[10px] h-[10px]" />
         </span>
       </div>

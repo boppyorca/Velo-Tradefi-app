@@ -1,16 +1,19 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { useQuery } from "@tanstack/react-query";
-import { StockTable } from "@/components/features";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { StockTable, WatchlistSection } from "@/components/features";
 import { Button } from "@/components/ui/button";
 import { RefreshCw } from "lucide-react";
-import { stockApi } from "@/lib/api-client";
+import { stockApi, watchlistApi } from "@/lib/api-client";
+import { useAuthStore } from "@/lib/auth-store";
+import type { Stock } from "@/lib/types";
 
 export default function MarketsPage() {
   const router = useRouter();
-  const [watched, setWatched] = useState<Set<string>>(new Set(["AAPL", "NVDA", "VNM"]));
+  const queryClient = useQueryClient();
+  const { isAuthenticated } = useAuthStore();
 
   const { data: stocks, isLoading, isFetching, refetch, error } = useQuery({
     queryKey: ["stocks"],
@@ -20,14 +23,40 @@ export default function MarketsPage() {
     retry: 1,
   });
 
-  function handleToggleWatchlist(symbol: string) {
-    setWatched((prev) => {
-      const next = new Set(prev);
-      if (next.has(symbol)) next.delete(symbol);
-      else next.add(symbol);
-      return next;
-    });
-  }
+  // Load user's watchlist symbols for the star state
+  const { data: watchlistItems } = useQuery({
+    queryKey: ["watchlist"],
+    queryFn: watchlistApi.list,
+    enabled: isAuthenticated,
+    retry: 1,
+  });
+
+  const watchedSymbols = new Set((watchlistItems ?? []).map((w) => w.symbol));
+
+  const addMutation = useMutation({
+    mutationFn: (symbol: string) => watchlistApi.add(symbol),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["watchlist"] }),
+  });
+
+  const removeMutation = useMutation({
+    mutationFn: (symbol: string) => watchlistApi.remove(symbol),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["watchlist"] }),
+  });
+
+  const handleToggleWatchlist = useCallback(
+    (symbol: string) => {
+      if (!isAuthenticated) {
+        router.push("/login");
+        return;
+      }
+      if (watchedSymbols.has(symbol)) {
+        removeMutation.mutate(symbol);
+      } else {
+        addMutation.mutate(symbol);
+      }
+    },
+    [isAuthenticated, router, watchedSymbols, addMutation, removeMutation]
+  );
 
   return (
     <div className="space-y-4">
@@ -59,16 +88,25 @@ export default function MarketsPage() {
         </div>
       )}
 
-      {/* Market tabs */}
-      <div className="mb-2">
-        <StockTable
-          stocks={stocks ?? []}
-          loading={isLoading}
-          error={error ?? undefined}
-          watchedSymbols={watched}
-          onToggleWatchlist={handleToggleWatchlist}
-          onSymbolClick={(symbol) => router.push(`/markets/${symbol}`)}
-        />
+      <div className="grid grid-cols-3 gap-6">
+        {/* Left col — Market table */}
+        <div className="col-span-2">
+          <StockTable
+            stocks={stocks ?? []}
+            loading={isLoading}
+            error={error ?? undefined}
+            watchedSymbols={watchedSymbols}
+            onToggleWatchlist={handleToggleWatchlist}
+            onSymbolClick={(symbol) => router.push(`/markets/${symbol}`)}
+          />
+        </div>
+
+        {/* Right col — Watchlist */}
+        <div>
+          <WatchlistSection
+            onSymbolClick={(symbol) => router.push(`/markets/${symbol}`)}
+          />
+        </div>
       </div>
     </div>
   );

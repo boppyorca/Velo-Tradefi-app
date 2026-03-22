@@ -1,6 +1,6 @@
 "use client";
 
-import type { AuthResponse, StocksResponse, MemecoinsResponse, NewsResponse, StockQuote, Prediction, Stock, StockHistoryPoint } from "./types";
+import type { AuthResponse, StocksResponse, MemecoinsResponse, NewsResponse, StockQuote, Prediction, Stock, StockHistoryPoint, WatchlistItem } from "./types";
 
 /** True when env points at the usual local Kestrel URL — browser should use /bff proxy instead (same-origin). */
 function isLocalLoopbackApiUrl(url: string): boolean {
@@ -177,6 +177,26 @@ export const memecoinApi = {
 
   price: (ids: string) =>
     request<import("./types").Memecoin[]>(`/api/memecoins/prices?ids=${ids}`),
+};
+
+// ── Watchlist ────────────────────────────────────────────────────────────────
+export const watchlistApi = {
+  list: (): Promise<WatchlistItem[]> =>
+    request<{ data: WatchlistItem[]; success: boolean }>("/api/watchlist").then(
+      (r) => r.data ?? []
+    ),
+
+  add: (symbol: string, market?: string) =>
+    request<{ success: boolean; message: string }>("/api/watchlist", {
+      method: "POST",
+      body: JSON.stringify({ symbol, market }),
+    }),
+
+  remove: (symbol: string, market?: string) =>
+    request<{ success: boolean }>(
+      `/api/watchlist/${encodeURIComponent(symbol)}${market ? `?market=${market}` : ""}`,
+      { method: "DELETE" }
+    ),
 };
 
 // ── News ───────────────────────────────────────────────────────────────────
