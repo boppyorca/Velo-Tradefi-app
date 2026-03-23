@@ -27,6 +27,7 @@ public class AppDbContext : DbContext
             entity.Property(e => e.PasswordHash).HasColumnName("password_hash").IsRequired();
             entity.Property(e => e.FullName).HasColumnName("full_name").IsRequired().HasMaxLength(255);
             entity.Property(e => e.WalletAddress).HasColumnName("wallet_address").HasMaxLength(42);
+            entity.Property(e => e.Role).HasColumnName("role").IsRequired().HasMaxLength(50).HasDefaultValue("User");
             entity.Property(e => e.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("now()");
             entity.Property(e => e.UpdatedAt).HasColumnName("updated_at");
         });

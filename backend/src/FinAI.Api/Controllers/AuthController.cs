@@ -77,7 +77,8 @@ public class AuthController : ControllerBase
                         User: new UserDto(
                             Guid.Parse(result.User!.Id!),
                             result.User.Email!,
-                            fullName ?? ""
+                            fullName ?? "",
+                            "User"
                         )
                     ));
                 }
@@ -106,6 +107,7 @@ public class AuthController : ControllerBase
             Email = request.Email.ToLowerInvariant().Trim(),
             PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.Password),
             FullName = request.FullName.Trim(),
+            Role = "User",
             CreatedAt = DateTime.UtcNow
         };
 
@@ -115,7 +117,7 @@ public class AuthController : ControllerBase
         var token = GenerateJwt(user);
         return Ok(new AuthResponseDto(
             Token: token,
-            User: new UserDto(user.Id, user.Email, user.FullName)
+            User: new UserDto(user.Id, user.Email, user.FullName, user.Role)
         ));
     }
 
@@ -161,7 +163,8 @@ public class AuthController : ControllerBase
                         User: new UserDto(
                             Guid.Parse(result.User!.Id!),
                             result.User.Email!,
-                            fullName ?? ""
+                            fullName ?? "",
+                            "User"
                         )
                     ));
                 }
@@ -182,7 +185,7 @@ public class AuthController : ControllerBase
         var token = GenerateJwt(user);
         return Ok(new AuthResponseDto(
             Token: token,
-            User: new UserDto(user.Id, user.Email, user.FullName)
+            User: new UserDto(user.Id, user.Email, user.FullName, user.Role)
         ));
     }
 
@@ -201,7 +204,7 @@ public class AuthController : ControllerBase
         if (user is null)
             return NotFound(new { success = false, message = "User not found" });
 
-        return Ok(new UserDto(user.Id, user.Email, user.FullName));
+        return Ok(new UserDto(user.Id, user.Email, user.FullName, user.Role));
     }
 
     /// <summary>
@@ -349,6 +352,7 @@ public class AuthController : ControllerBase
                                 Email = email.ToLowerInvariant(),
                                 PasswordHash = "",
                                 FullName = fullName,
+                                Role = "User",
                                 CreatedAt = DateTime.UtcNow
                             };
                             await _userRepository.CreateAsync(newUser);
@@ -364,13 +368,14 @@ public class AuthController : ControllerBase
                 }
 
                 // Generate a backend JWT so the API stays authenticated
-                var backendToken = GenerateJwtFromSupabaseUser(supabaseUser.Id!, email, fullName);
+                var backendToken = GenerateJwtFromSupabaseUser(supabaseUser.Id!, email, fullName, "User");
                 return Ok(new AuthResponseDto(
                     Token: backendToken,
                     User: new UserDto(
                         Guid.TryParse(supabaseUser.Id, out var uid) ? uid : Guid.NewGuid(),
                         email,
-                        fullName
+                        fullName,
+                        "User"
                     )
                 ));
             }
@@ -383,7 +388,7 @@ public class AuthController : ControllerBase
         }
     }
 
-    private string GenerateJwtFromSupabaseUser(string supabaseId, string email, string fullName)
+    private string GenerateJwtFromSupabaseUser(string supabaseId, string email, string fullName, string role = "User")
     {
         var jwtSecret = _config["JWT_SECRET_KEY"] ?? "VeloFinAI-SuperSecretKey-32chars-min!";
         var expiryDays = int.Parse(_config["JWT_EXPIRY_DAYS"] ?? "7");
@@ -398,6 +403,7 @@ public class AuthController : ControllerBase
             new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.NameIdentifier, supabaseId),
             new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.Email, email),
             new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.Name, fullName),
+            new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.Role, role),
             new System.Security.Claims.Claim("provider", "google"),
         };
 
@@ -430,6 +436,8 @@ public class AuthController : ControllerBase
                 System.Security.Claims.ClaimTypes.Email, user.Email),
             new System.Security.Claims.Claim(
                 System.Security.Claims.ClaimTypes.Name, user.FullName),
+            new System.Security.Claims.Claim(
+                System.Security.Claims.ClaimTypes.Role, user.Role),
         };
 
         var token = new System.IdentityModel.Tokens.Jwt.JwtSecurityToken(
