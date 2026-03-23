@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { useAuthStore } from "@/lib/auth-store";
 import { stockApi, memecoinApi, newsApi } from "@/lib/api-client";
+import { useStockSignalR, LiveBadge } from "@/lib/useStockSignalR";
 import type { Memecoin, MemecoinsResponse, NewsResponse } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import {
@@ -76,11 +77,20 @@ export default function DashboardPage() {
     ? `Welcome back, ${user.fullName.split(" ")[0]}`
     : "Welcome back, Trader";
 
+  // ── SignalR real-time connection ──────────────────────────────────────────
+  // Subscribe to all markets (VN + US) for real-time updates
+  // SignalR updates are merged into React Query cache automatically
+  const { connectionStatus } = useStockSignalR({});
+
+  // ── Data queries ─────────────────────────────────────────────────────────
+  // Polling kept as fallback: when SignalR disconnects (e.g. network loss),
+  // React Query polling ensures data still refreshes.
   const { data: stocks, isLoading: stocksLoading } = useQuery({
     queryKey: ["stocks"],
     queryFn: () => stockApi.list({ pageSize: 50 }),
-    staleTime: 20_000,
-    refetchInterval: 30_000,
+    staleTime: 30_000,
+    // Much longer interval — SignalR handles real-time updates; polling is fallback only
+    refetchInterval: connectionStatus === "connected" ? false : 30_000,
     retry: 1,
   });
 
@@ -88,6 +98,7 @@ export default function DashboardPage() {
     queryKey: ["memecoins-dashboard"],
     queryFn: () => memecoinApi.list({ pageSize: 6 }),
     staleTime: 15_000,
+    // Memecoins don't have SignalR — keep polling
     refetchInterval: 30_000,
     retry: 1,
   });
@@ -127,10 +138,7 @@ export default function DashboardPage() {
           <h1 className="text-3xl font-bold text-[#A3E635]">{greeting}</h1>
           <p className="text-sm text-[#8A8A9A] mt-0.5">{todayStr()}</p>
         </div>
-        <div className="flex items-center gap-1.5 border border-[#A3E635]/30 rounded-full px-3 py-1">
-          <span className="w-2 h-2 rounded-full bg-[#A3E635] animate-pulse" />
-          <span className="text-xs font-medium text-[#A3E635]">LIVE</span>
-        </div>
+        <LiveBadge />
       </div>
 
       {/* Main content */}

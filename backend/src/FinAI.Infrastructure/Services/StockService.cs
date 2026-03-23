@@ -27,7 +27,6 @@ public class StockService : IStockService
         ["NFLX"]  = ("NFLX",   "Netflix Inc.",           "NASDAQ"),
         ["AMD"]   = ("AMD",    "Advanced Micro Devices", "NASDAQ"),
         ["INTC"]  = ("INTC",   "Intel Corp.",            "NASDAQ"),
-        ["MSFT"]  = ("MSFT",   "Microsoft Corp.",        "NASDAQ"),
         ["IBM"]   = ("IBM",    "IBM Corp.",              "NASDAQ"),
         ["DIS"]   = ("DIS",    "Walt Disney Co.",        "NASDAQ"),
         ["PYPL"]  = ("PYPL",   "PayPal Holdings",       "NASDAQ"),

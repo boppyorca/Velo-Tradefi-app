@@ -289,11 +289,11 @@ builder.Services.AddSingleton<IRedisCacheService>(sp =>
 // ── SignalR Stock Broadcaster ─────────────────────────────────────────────────
 builder.Services.AddSingleton<IStockPriceBroadcaster, SignalRStockBroadcaster>();
 
+// ── Stock Polling Background Service ─────────────────────────────────────────
+builder.Services.AddHostedService<StockPollingBackgroundService>();
+
 // ── Web3 Signature Service ─────────────────────────────────────────────────────
 builder.Services.AddSingleton<IWeb3SignatureService, Web3SignatureService>();
-
-// ── SignalR Stock Broadcaster ─────────────────────────────────────────────────
-builder.Services.AddSingleton<IStockPriceBroadcaster, SignalRStockBroadcaster>();
 
 // ── Program ────────────────────────────────────────────────────────────────────
 var app = builder.Build();
