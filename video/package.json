@@ -1,0 +1,23 @@
+{
+  "name": "velo-tradefi-video",
+  "version": "1.0.0",
+  "description": "Remotion video for Velo Tradefi project",
+  "scripts": {
+    "start": "remotion studio",
+    "build": "remotion render VeloTradefiVideo out/velo-tradefi.mp4",
+    "still": "remotion still VeloTradefiVideo out/thumbnail.png",
+    "preview": "remotion preview",
+    "deploy": "npm run build && npx remotion lambda sites create && npx remotion lambda render VeloTradefiVideo",
+    "render": "node render.mjs"
+  },
+  "dependencies": {
+    "@remotion/bundler": "^4.0.399",
+    "@remotion/cli": "^4.0.399",
+    "@remotion/lambda": "^4.0.399",
+    "@remotion/renderer": "^4.0.399",
+    "@remotion/transitions": "^4.0.399",
+    "remotion": "^4.0.399",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.3.3"
+  }
+}
