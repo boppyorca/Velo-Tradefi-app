@@ -226,17 +226,17 @@ export interface LiveBadgeProps {
 }
 
 export function LiveBadge({ status, className }: LiveBadgeProps) {
-  const [currentStatus, setCurrentStatus] = useState<ConnectionStatus>(
-    status ?? stockSignalR.status
+  // Chỉ dùng state khi không có prop `status` — tránh setState đồng bộ trong effect (react-hooks/set-state-in-effect).
+  const [subscribedStatus, setSubscribedStatus] = useState<ConnectionStatus>(
+    () => stockSignalR.status
   );
 
   useEffect(() => {
-    if (status !== undefined) {
-      setCurrentStatus(status);
-      return;
-    }
-    return stockSignalR.status$.subscribe(setCurrentStatus);
+    if (status !== undefined) return;
+    return stockSignalR.status$.subscribe(setSubscribedStatus);
   }, [status]);
+
+  const currentStatus = status !== undefined ? status : subscribedStatus;
 
   const isLive = currentStatus === "connected";
   const isReconnecting = currentStatus === "reconnecting";

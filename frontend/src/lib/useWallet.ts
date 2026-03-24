@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback, useEffect } from "react";
-import { BrowserProvider, formatEther } from "ethers";
+import { BrowserProvider, formatEther, type Eip1193Provider } from "ethers";
 import { useAuthStore } from "@/lib/auth-store";
 
 export interface WalletState {
@@ -62,7 +62,9 @@ export function useWallet() {
   const fetchBalance = useCallback(async (address: string) => {
     if (!window.ethereum) return;
     try {
-      const provider = new BrowserProvider(window.ethereum as any);
+      const provider = new BrowserProvider(
+        window.ethereum as Eip1193Provider
+      );
       const rawBalance = await provider.getBalance(address);
       const ethBalance = parseFloat(formatEther(rawBalance));
       // Rough USD conversion (1 ETH ≈ $2000)
