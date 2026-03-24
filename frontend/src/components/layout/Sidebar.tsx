@@ -2,9 +2,26 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useEffect, useState } from "react";
 import { Search } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/lib/auth-store";
+import { marketsApi, watchlistApi } from "@/lib/api-client";
+import type { ExchangeStatusRow, WatchlistItem } from "@/lib/types";
+
+const EXCHANGE_CODES = ["NASDAQ", "NYSE", "HOSE", "LSE"] as const;
+
+function tickerTint(symbol: string): string {
+  let h = 0;
+  for (let i = 0; i < symbol.length; i++) h = symbol.charCodeAt(i) + ((h << 5) - h);
+  const hue = Math.abs(h) % 360;
+  return `hsl(${hue} 28% 16%)`;
+}
+
+function formatChangePct(n: number): string {
+  const sign = n >= 0 ? "+" : "";
+  return `${sign}${n.toFixed(1)}%`;
+}
 
 const NAV_ITEMS = [
   { href: "/dashboard", label: "Dashboard", key: "dashboard" },
@@ -24,23 +41,40 @@ const NAV_ICONS: Record<string, string> = {
   settings: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>`,
 };
 
-const EXCHANGES = [
-  { name: "NASDAQ", live: true },
-  { name: "HOSE", live: true },
-  { name: "NYSE", live: true },
-  { name: "LSE", live: false },
-];
-
-const WATCHLIST = [
-  { ticker: "AAPL", change: "+0.8%", positive: true, color: "#1a1a2e" },
-  { ticker: "NVDA", change: "+2.4%", positive: true, color: "#1a2e1a" },
-  { ticker: "VNM", change: "+1.2%", positive: true, color: "#2e1a1a" },
-  { ticker: "DOGE", change: "+5.2%", positive: true, color: "#2e2a1a" },
-];
-
 export function Sidebar() {
   const pathname = usePathname();
   const { user } = useAuthStore();
+  const [exchangeRows, setExchangeRows] = useState<ExchangeStatusRow[]>([]);
+  const [watchlistItems, setWatchlistItems] = useState<WatchlistItem[]>([]);
+
+  useEffect(() => {
+    const token = typeof window !== "undefined" ? localStorage.getItem("velo_token") : null;
+    if (!token) {
+      setExchangeRows([]);
+      setWatchlistItems([]);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const ex = await marketsApi.exchangeStatus();
+        if (!cancelled) setExchangeRows(ex.data ?? []);
+      } catch {
+        if (!cancelled) setExchangeRows([]);
+      }
+      try {
+        const wl = await watchlistApi.list();
+        if (!cancelled) setWatchlistItems(wl.slice(0, 8));
+      } catch {
+        if (!cancelled) setWatchlistItems([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id]);
+
+  const liveByCode = new Map(exchangeRows.map((r) => [r.code, r.live]));
 
   function isActive(href: string) {
     if (href === "/dashboard") return pathname === "/dashboard";
@@ -128,20 +162,23 @@ export function Sidebar() {
         Exchanges
       </p>
       <div className="px-3 space-y-1">
-        {EXCHANGES.map(({ name, live }) => (
-          <div
-            key={name}
-            className="flex items-center justify-between py-1 px-2 rounded-lg hover:bg-white/[0.04] cursor-pointer"
-          >
-            <span className="flex items-center gap-2 text-[#8A8A9A] text-xs">
-              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/>
-              </svg>
-              {name}
-            </span>
-            <span className={cn("w-1.5 h-1.5 rounded-full", live ? "bg-[#A3E635]" : "bg-[#4A4A5A]")} />
-          </div>
-        ))}
+        {EXCHANGE_CODES.map((name) => {
+          const live = liveByCode.get(name) ?? false;
+          return (
+            <div
+              key={name}
+              className="flex items-center justify-between py-1 px-2 rounded-lg hover:bg-white/[0.04] cursor-pointer"
+            >
+              <span className="flex items-center gap-2 text-[#8A8A9A] text-xs">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/>
+                </svg>
+                {name}
+              </span>
+              <span className={cn("w-1.5 h-1.5 rounded-full", live ? "bg-[#A3E635]" : "bg-[#4A4A5A]")} />
+            </div>
+          );
+        })}
       </div>
 
       {/* Watchlist */}
@@ -149,23 +186,34 @@ export function Sidebar() {
         Watchlist
       </p>
       <div className="px-3 space-y-0.5">
-        {WATCHLIST.map(({ ticker, change, positive, color }) => (
-          <div
-            key={ticker}
-            className="flex items-center gap-2 py-1.5 px-2 rounded-lg hover:bg-white/[0.04] cursor-pointer"
-          >
-            <div
-              className="w-6 h-6 rounded-full flex items-center justify-center text-[9px] font-bold text-[#8A8A9A]"
-              style={{ backgroundColor: color }}
-            >
-              {ticker.slice(0, 2)}
-            </div>
-            <span className="text-[12px] font-medium text-[#F0F0F0] font-mono flex-1">{ticker}</span>
-            <span className={cn("text-[11px] font-mono", positive ? "text-[#A3E635]" : "text-[#F05252]")}>
-              {change}
-            </span>
-          </div>
-        ))}
+        {watchlistItems.length === 0 ? (
+          <p className="text-[11px] text-[#4A4A5A] px-2 py-1">
+            {user ? "Your watchlist is empty." : "Sign in to see your watchlist."}
+          </p>
+        ) : (
+          watchlistItems.map((item) => {
+            const positive = item.changePercent >= 0;
+            return (
+              <div
+                key={item.id}
+                className="flex items-center gap-2 py-1.5 px-2 rounded-lg hover:bg-white/[0.04] cursor-pointer"
+              >
+                <div
+                  className="w-6 h-6 rounded-full flex items-center justify-center text-[9px] font-bold text-[#C8C8D0]"
+                  style={{ backgroundColor: tickerTint(item.symbol) }}
+                >
+                  {item.symbol.slice(0, 2).toUpperCase()}
+                </div>
+                <span className="text-[12px] font-medium text-[#F0F0F0] font-mono flex-1">{item.symbol}</span>
+                <span
+                  className={cn("text-[11px] font-mono", positive ? "text-[#A3E635]" : "text-[#F05252]")}
+                >
+                  {formatChangePct(item.changePercent)}
+                </span>
+              </div>
+            );
+          })
+        )}
       </div>
 
       {/* Bottom bar */}

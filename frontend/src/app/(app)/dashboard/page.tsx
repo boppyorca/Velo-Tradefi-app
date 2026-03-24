@@ -133,6 +133,22 @@ export default function DashboardPage() {
         </div>
       </div>
 
+      {user?.role === "Admin" && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[#A3E635]/35 bg-[#A3E635]/[0.08] px-4 py-3">
+          <p className="text-sm text-[#F0F0F0]">
+            <span className="font-semibold text-[#A3E635]">Admin</span>
+            {" — "}Bạn đang dùng tài khoản quản trị. Mở bảng điều khiển admin để quản lý hệ thống.
+          </p>
+          <button
+            type="button"
+            onClick={() => router.push("/admin")}
+            className="shrink-0 rounded-lg bg-[#A3E635] px-4 py-2 text-xs font-semibold text-black hover:bg-[#b5f23d] transition-colors"
+          >
+            Mở Admin Dashboard
+          </button>
+        </div>
+      )}
+
       {/* Main content */}
       <div className="grid grid-cols-3 gap-6">
         {/* Left col — Top Movers + Quick Actions */}

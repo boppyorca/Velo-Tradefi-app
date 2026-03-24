@@ -2,6 +2,7 @@ export interface User {
   id: string;
   email: string;
   fullName: string;
+  role: string;
   avatarUrl?: string;
   createdAt?: string;
 }
@@ -120,6 +121,26 @@ export interface WatchlistItem {
   name: string;
 }
 
+export interface AdminStatCard {
+  key: string;
+  label: string;
+  value: string;
+  change: string;
+  up: boolean;
+}
+
+export interface AdminActivityItem {
+  occurredAtUtc: string;
+  action: string;
+  user: string;
+  type: string;
+}
+
+export interface ExchangeStatusRow {
+  code: string;
+  live: boolean;
+}
+
 // API response types
 export interface AuthResponse {
   token: string;
@@ -127,6 +148,7 @@ export interface AuthResponse {
     id: string;
     email: string;
     fullName: string;
+    role: string;
   };
 }
 

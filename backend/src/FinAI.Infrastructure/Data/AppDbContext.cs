@@ -11,6 +11,7 @@ public class AppDbContext : DbContext
     public DbSet<StockWatchlist> StockWatchlists => Set<StockWatchlist>();
     public DbSet<MemecoinWatchlist> MemecoinWatchlists => Set<MemecoinWatchlist>();
     public DbSet<PredictionHistory> PredictionHistories => Set<PredictionHistory>();
+    public DbSet<SecurityAuditEvent> SecurityAuditEvents => Set<SecurityAuditEvent>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -81,6 +82,18 @@ public class AppDbContext : DbContext
                   .WithMany(u => u.PredictionHistories)
                   .HasForeignKey(e => e.UserId)
                   .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<SecurityAuditEvent>(entity =>
+        {
+            entity.ToTable("security_audit_events");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).HasColumnName("id");
+            entity.Property(e => e.OccurredAtUtc).HasColumnName("occurred_at_utc").IsRequired();
+            entity.Property(e => e.Kind).HasColumnName("kind").IsRequired().HasMaxLength(40);
+            entity.Property(e => e.NormalizedEmail).HasColumnName("normalized_email").HasMaxLength(255);
+            entity.Property(e => e.UserId).HasColumnName("user_id");
+            entity.HasIndex(e => e.OccurredAtUtc);
         });
     }
 }

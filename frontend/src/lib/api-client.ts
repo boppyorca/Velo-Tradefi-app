@@ -1,6 +1,33 @@
 "use client";
 
-import type { AuthResponse, StocksResponse, MemecoinsResponse, NewsResponse, StockQuote, Prediction, Stock, StockHistoryPoint, WatchlistItem } from "./types";
+import type {
+  AdminActivityItem,
+  AdminStatCard,
+  AuthResponse,
+  ExchangeStatusRow,
+  MemecoinsResponse,
+  NewsResponse,
+  Prediction,
+  Stock,
+  StockHistoryPoint,
+  StockQuote,
+  StocksResponse,
+  WatchlistItem,
+} from "./types";
+
+function normalizeWatchlistItem(raw: unknown): WatchlistItem {
+  const r = raw as Record<string, unknown>;
+  const m = String(r.market ?? r.Market ?? "US").toUpperCase();
+  return {
+    id: String(r.id ?? r.Id ?? ""),
+    symbol: String(r.symbol ?? r.Symbol ?? ""),
+    market: m === "VN" ? "VN" : "US",
+    addedAt: String(r.addedAt ?? r.AddedAt ?? ""),
+    price: Number(r.price ?? r.Price ?? 0),
+    changePercent: Number(r.changePercent ?? r.ChangePercent ?? 0),
+    name: String(r.name ?? r.Name ?? ""),
+  };
+}
 
 /** True when env points at the usual local Kestrel URL — browser should use /bff proxy instead (same-origin). */
 function isLocalLoopbackApiUrl(url: string): boolean {
@@ -75,8 +102,15 @@ async function request<T>(
   });
 
   if (!res.ok) {
-    const error = await res.json().catch(() => ({ message: res.statusText }));
-    throw new Error(error.message ?? `HTTP ${res.status}`);
+    const raw = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+    const msg =
+      (typeof raw.message === "string" && raw.message) ||
+      (typeof raw.title === "string" && raw.title) ||
+      (res.status === 401
+        ? "Unauthorized — token missing, expired, or not a backend JWT. Sign out and sign in again."
+        : null) ||
+      res.statusText;
+    throw new Error(msg || `HTTP ${res.status}`);
   }
 
   return res.json();
@@ -97,7 +131,7 @@ export const authApi = {
     }),
 
   me: (token?: string | null) =>
-    request<{ id: string; email: string; fullName: string }>(
+    request<{ id: string; email: string; fullName: string; role: string }>(
       "/api/auth/me",
       {},
       token
@@ -182,8 +216,8 @@ export const memecoinApi = {
 // ── Watchlist ────────────────────────────────────────────────────────────────
 export const watchlistApi = {
   list: (): Promise<WatchlistItem[]> =>
-    request<{ data: WatchlistItem[]; success: boolean }>("/api/watchlist").then(
-      (r) => r.data ?? []
+    request<{ data: unknown[]; success: boolean }>("/api/watchlist").then((r) =>
+      (r.data ?? []).map(normalizeWatchlistItem)
     ),
 
   add: (symbol: string, market?: string) =>
@@ -208,4 +242,18 @@ export const newsApi = {
     const qs = new URLSearchParams(filtered).toString();
     return request<NewsResponse>(`/api/news${qs ? `?${qs}` : ""}`);
   },
+};
+
+// ── Admin (requires Admin role + backend JWT with role claim) ─────────────
+export const adminApi = {
+  dashboard: () =>
+    request<{ success: boolean; data: { stats: AdminStatCard[]; recentActivity: AdminActivityItem[] } }>(
+      "/api/admin/dashboard"
+    ),
+};
+
+// ── Markets (authenticated) ────────────────────────────────────────────────
+export const marketsApi = {
+  exchangeStatus: () =>
+    request<{ success: boolean; data: ExchangeStatusRow[] }>("/api/markets/exchange-status"),
 };
