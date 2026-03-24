@@ -1,10 +1,10 @@
 # ─────────────────────────────────────────────────────────────────────────────
-# Dockerfile for VeloTradeFi Backend (ASP.NET Core 8)
+# Dockerfile for VeloTradeFi Backend (ASP.NET Core 10)
 # Multi-stage build for optimized image size
 # ─────────────────────────────────────────────────────────────────────────────
 
 # ── Stage 1: Build ──────────────────────────────────────────────────────────
-FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 
 WORKDIR /src
 
@@ -22,17 +22,17 @@ COPY . .
 
 # Build and publish
 WORKDIR /src/src/FinAI.Api
-RUN dotnet publish -c Release -o /app/publish --no-restore
+RUN dotnet publish -c Release -o /app/publish
 
 # ── Stage 2: Runtime ────────────────────────────────────────────────────────
-FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS runtime
+FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
 
 # Install curl for health checks
 RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user for security
-RUN groupadd --gid 1000 appgroup && \
-    useradd --uid 1000 --gid appgroup --shell /bin/bash --create-home appuser
+RUN (getent group 1000 || groupadd --gid 1000 appgroup) && \
+    (id -u 1000 >/dev/null 2>&1 || useradd --uid 1000 --gid 1000 --shell /bin/bash --create-home appuser 2>/dev/null || true)
 
 WORKDIR /app
 
@@ -40,10 +40,10 @@ WORKDIR /app
 COPY --from=build /app/publish .
 
 # Set ownership
-RUN chown -R appuser:appgroup /app
+RUN chown -R 1000:1000 /app
 
 # Switch to non-root user
-USER appuser
+USER 1000
 
 # Environment variables
 ENV ASPNETCORE_ENVIRONMENT=Production

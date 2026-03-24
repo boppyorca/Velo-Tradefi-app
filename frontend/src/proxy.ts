@@ -4,9 +4,9 @@ import type { NextRequest } from "next/server";
 /**
  * Auth Proxy - Handles authentication and redirects
  *
- * BFF proxy routes (/bff/*) are handled by:
- *   1. next.config.ts rewrites → for simple API proxying
- *   2. /app/api/bff/[...path]/route.ts → for full-featured proxy with auth
+ * API routes (/api/*) are rewritten to backend via next.config.ts:
+ *   - In dev: next.config.ts rewrites /api/* → backend:5001
+ *   - In Vercel: Vercel rewrites /api/* → Railway backend
  *
  * If rewrites don't work, api-client.ts falls back to direct backend calls.
  */
@@ -20,14 +20,14 @@ export function proxy(request: NextRequest) {
   // ── PASS THROUGH WITHOUT MODIFICATION ───────────────────────────────────────
   // These paths are handled by other mechanisms:
   // - /_next/*      → static files served by Next.js
-  // - /bff/*        → proxied to backend (via next.config.ts rewrites or API route)
+  // - /api/*        → Next.js rewrites to backend (next.config.ts)
+  // - /hubs/*       → Next.js rewrites to backend SignalR hub (next.config.ts)
   // - /favicon.ico  → static file
-  // - /api/bff/*    → Next.js API route (bypasses proxy)
   // - Files with extension → static files
   if (
     pathname.startsWith("/_next") ||
-    pathname.startsWith("/bff") ||
-    pathname.startsWith("/api/bff") ||
+    pathname.startsWith("/api") ||
+    pathname.startsWith("/hubs") ||
     pathname.startsWith("/favicon") ||
     pathname.includes(".")
   ) {
@@ -67,8 +67,6 @@ export function proxy(request: NextRequest) {
 export const config = {
   // Match all routes EXCEPT Next.js static files
   // The negative lookahead excludes paths that Next.js handles directly
-  // /bff/* is passed through to rewrites/API routes
-  // NOTE: In Next.js 16, the proxy matches ALL paths by default when no matcher
-  // is specified, but we list explicit paths for clarity
+  // /api/* and /hubs/* are passed through to rewrites
   matcher: ["/((?!_next/static|_next/image).*)"],
 };

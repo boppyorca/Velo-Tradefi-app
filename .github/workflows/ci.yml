@@ -223,7 +223,7 @@ jobs:
         run: |
           echo "Running integration tests..."
           # Test backend API
-          curl -sf http://localhost:8080/api/stocks/VNM | jq -e '.symbol' && echo "✓ Stock API works"
+          curl -sf http://localhost:5050/api/stocks/VNM | jq -e '.symbol' && echo "✓ Stock API works"
           
           # Test ML service
           curl -sf http://localhost:8000/health | jq -e '.status' && echo "✓ ML health works"

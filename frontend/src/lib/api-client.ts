@@ -2,35 +2,39 @@
 
 import type { AuthResponse, StocksResponse, MemecoinsResponse, NewsResponse, StockQuote, Prediction, Stock, StockHistoryPoint, WatchlistItem } from "./types";
 
-/** True when env points at the usual local Kestrel URL — browser should use direct backend URL. */
-function isLocalLoopbackApiUrl(url: string): boolean {
-  try {
-    const u = new URL(url);
-    const host = u.hostname.toLowerCase();
-    const port = u.port || (u.protocol === "https:" ? "443" : "80");
-    return (host === "localhost" || host === "127.0.0.1") && (port === "5000" || port === "5001");
-  } catch {
-    return false;
-  }
-}
-
-/**
- * Browser: use NEXT_PUBLIC_API_URL if set, otherwise fall back to direct backend URL.
- * When NEXT_PUBLIC_API_URL=http://127.0.0.1:5001, browser calls backend directly.
- * CORS is configured on the backend to allow localhost:3000 and localhost:5001.
+/** Backend API URL resolution strategy:
+ * 1. Use NEXT_PUBLIC_API_URL if set (local dev, Railway, or explicit deployment).
+ * 2. In browser without NEXT_PUBLIC_API_URL → use same-origin /api/* (Next.js rewrites to backend).
+ * 3. In server without NEXT_PUBLIC_API_URL → fallback to BACKEND_INTERNAL_URL or 127.0.0.1:5001.
  */
 function getApiBase(): string {
   const configured = process.env.NEXT_PUBLIC_API_URL?.trim()?.replace(/\/$/, "");
   if (configured) return configured;
+
   if (typeof window !== "undefined") {
-    // Browser: call backend directly (CORS-enabled on backend)
-    return "http://127.0.0.1:5001";
+    // Browser without explicit API URL: use same-origin /api/* which next.config.ts rewrites to backend.
+    // In local dev: next.config.ts rewrites /api/* → backend:5001.
+    // In Vercel preview/prod: Vercel rewrites /api/* → Railway backend.
+    return "";
   }
-  // Server: use internal URL or localhost
+  // Server-side fallback
   return (
     process.env.BACKEND_INTERNAL_URL?.trim().replace(/\/$/, "") ||
     "http://127.0.0.1:5001"
   );
+}
+
+/**
+ * Resolve the full API URL for a given endpoint.
+ * Call sites pass paths that already start with `/api/...`.
+ * When getApiBase() is empty (browser, no NEXT_PUBLIC_API_URL), return the path
+ * as-is so Next.js rewrites `/api/*` → backend — do NOT prepend `/api` again
+ * (that would produce `/api/api/stocks` and a 404 from the backend).
+ */
+function resolveUrl(endpoint: string): string {
+  const base = getApiBase();
+  if (base) return `${base}${endpoint}`;
+  return endpoint;
 }
 
 /** Normalize API payloads (.NET may send PascalCase; Yahoo decimals as strings) */
@@ -74,7 +78,9 @@ async function request<T>(
     ...options.headers,
   };
 
-  const res = await fetch(`${getApiBase()}${endpoint}`, {
+  const url = resolveUrl(endpoint);
+
+  const res = await fetch(url, {
     ...options,
     headers,
   });

@@ -4,8 +4,10 @@ import type { NextConfig } from "next";
  * Backend API URL for BFF proxy.
  * Priority: NEXT_PUBLIC_API_URL > http://127.0.0.1:5001
  *
- * In dev: browser → /bff/* → Next.js rewrites → backend (127.0.0.1:5001)
- * In prod: browser → /bff/* → Vercel rewrites → Railway backend
+ * Routing strategy:
+ * - Frontend calls /api/* (relative paths)
+ * - next.config.ts rewrites /api/* → backend:5001 in dev, Railway in prod
+ * - This avoids CORS issues and works seamlessly in Vercel preview deployments
  */
 const backendUrl =
   process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "") ||
@@ -13,18 +15,17 @@ const backendUrl =
   "http://127.0.0.1:5001";
 
 const nextConfig: NextConfig = {
+  output: "standalone",
   async rewrites() {
     return [
-      // BFF proxy for REST API (stocks, memecoins, news, etc.)
+      // All /api/* requests → backend (for development with dotnet run)
       {
-        source: "/bff/api/:path*",
+        source: "/api/:path*",
         destination: `${backendUrl}/api/:path*`,
       },
-      // BFF proxy for SignalR hub
-      // Browser connects to same-origin /bff/hubs/stock-price
-      // Next.js rewrites to backend SignalR endpoint
+      // SignalR hub → backend
       {
-        source: "/bff/hubs/:path*",
+        source: "/hubs/:path*",
         destination: `${backendUrl}/hubs/:path*`,
       },
     ];
