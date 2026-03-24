@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Search } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useAuthStore } from "@/lib/auth-store";
 
 const NAV_ITEMS = [
   { href: "/dashboard", label: "Dashboard", key: "dashboard" },
@@ -39,6 +40,7 @@ const WATCHLIST = [
 
 export function Sidebar() {
   const pathname = usePathname();
+  const { user } = useAuthStore();
 
   function isActive(href: string) {
     if (href === "/dashboard") return pathname === "/dashboard";
@@ -95,6 +97,31 @@ export function Sidebar() {
           );
         })}
       </nav>
+
+      {/* Admin Dashboard — only visible to Admin role */}
+      {user?.role === "Admin" && (
+        <>
+          <p className="text-[10px] font-medium tracking-widest text-[#4A4A5A] uppercase px-4 mb-1 mt-6">
+            Admin
+          </p>
+          <Link
+            href="/admin"
+            className={cn(
+              "flex items-center gap-3 mx-0 px-3 py-2 rounded-r-lg cursor-pointer transition-colors text-[13px]",
+              isActive("/admin")
+                ? "bg-[#A3E635]/[0.09] text-[#A3E635] border-l-2 border-[#A3E635] rounded-l-none"
+                : "text-[#8A8A9A] hover:bg-white/[0.04] hover:text-[#F0F0F0] border-l-2 border-transparent"
+            )}
+          >
+            <span className="w-4 h-4 flex-shrink-0 [&>svg]:w-4 [&>svg]:h-4">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 2a10 10 0 1 0 10 10"/><path d="M12 12 18 6"/><path d="m6 18-2 2 2-2"/><path d="M12 2v4"/><path d="M20 8h4"/><path d="M12 12 6 6"/>
+              </svg>
+            </span>
+            <span>Admin Dashboard</span>
+          </Link>
+        </>
+      )}
 
       {/* Exchanges */}
       <p className="text-[10px] font-medium tracking-widest text-[#4A4A5A] uppercase px-4 mb-1 mt-6">

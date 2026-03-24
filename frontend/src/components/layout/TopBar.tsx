@@ -61,9 +61,9 @@ export function TopBar() {
           <Wallet className="w-[18px] h-[18px] text-[#8A8A9A]" />
         </button>
 
-        {/* PRO TRADER badge */}
+        {/* User role badge */}
         <span className="bg-[#A3E635]/[0.12] text-[#A3E635] text-[10px] font-bold tracking-wider px-2.5 py-1 rounded-full">
-          PRO TRADER
+          {user?.role?.toUpperCase() || "TRADER"}
         </span>
 
         {/* User */}
