@@ -2,29 +2,34 @@
 
 import type { AuthResponse, StocksResponse, MemecoinsResponse, NewsResponse, StockQuote, Prediction, Stock, StockHistoryPoint, WatchlistItem } from "./types";
 
-/** True when env points at the usual local Kestrel URL — browser should use /bff proxy instead (same-origin). */
+/** True when env points at the usual local Kestrel URL — browser should use direct backend URL. */
 function isLocalLoopbackApiUrl(url: string): boolean {
   try {
     const u = new URL(url);
     const host = u.hostname.toLowerCase();
     const port = u.port || (u.protocol === "https:" ? "443" : "80");
-    return (host === "localhost" || host === "127.0.0.1") && port === "5000";
+    return (host === "localhost" || host === "127.0.0.1") && (port === "5000" || port === "5001");
   } catch {
     return false;
   }
 }
 
 /**
- * Browser: use `/bff` → Next.js rewrites to the .NET API (see next.config.ts) unless NEXT_PUBLIC_API_URL is a non-local API.
- * Server: call the backend directly via BACKEND_INTERNAL_URL or 127.0.0.1:5000.
+ * Browser: use NEXT_PUBLIC_API_URL if set, otherwise fall back to direct backend URL.
+ * When NEXT_PUBLIC_API_URL=http://127.0.0.1:5001, browser calls backend directly.
+ * CORS is configured on the backend to allow localhost:3000 and localhost:5001.
  */
 function getApiBase(): string {
   const configured = process.env.NEXT_PUBLIC_API_URL?.trim()?.replace(/\/$/, "");
-  if (configured && !isLocalLoopbackApiUrl(configured)) return configured;
-  if (typeof window !== "undefined") return "/bff";
+  if (configured) return configured;
+  if (typeof window !== "undefined") {
+    // Browser: call backend directly (CORS-enabled on backend)
+    return "http://127.0.0.1:5001";
+  }
+  // Server: use internal URL or localhost
   return (
     process.env.BACKEND_INTERNAL_URL?.trim().replace(/\/$/, "") ||
-    "http://127.0.0.1:5000"
+    "http://127.0.0.1:5001"
   );
 }
 

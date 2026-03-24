@@ -1,0 +1,26 @@
+{
+  "name": "VeloTradeFi ML Service",
+  "lang": "python",
+  "dockerfile": {
+    "set": true,
+    "path": "ml-service/Dockerfile"
+  },
+  "env": {
+    "PYTHON_ENV": {
+      "value": "production"
+    },
+    "MODEL_DIR": {
+      "value": "/app/models"
+    }
+  },
+  "port": 8000,
+  "healthCheck": {
+    "path": "/health"
+  },
+  "domains": [
+    {
+      "name": "ml.velotradefi.com",
+      "type": "PROXY"
+    }
+  ]
+}

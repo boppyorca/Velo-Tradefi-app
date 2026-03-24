@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { RefreshCw } from "lucide-react";
 import { stockApi, watchlistApi } from "@/lib/api-client";
 import { useAuthStore } from "@/lib/auth-store";
+import { useStockSignalR, LiveBadge } from "@/lib/useStockSignalR";
 import type { Stock } from "@/lib/types";
 
 export default function MarketsPage() {
@@ -15,11 +16,17 @@ export default function MarketsPage() {
   const queryClient = useQueryClient();
   const { isAuthenticated } = useAuthStore();
 
+  // ── SignalR real-time connection ──────────────────────────────────────────
+  const { connectionStatus } = useStockSignalR({});
+
+  // ── Data queries ─────────────────────────────────────────────────────────
+  // Polling is fallback only — SignalR pushes real-time updates
   const { data: stocks, isLoading, isFetching, refetch, error } = useQuery({
     queryKey: ["stocks"],
     queryFn: () => stockApi.list({ pageSize: 50 }),
-    refetchInterval: 30_000,
-    staleTime: 20_000,
+    staleTime: 30_000,
+    // Disable polling when SignalR is connected; fallback to 30s when disconnected
+    refetchInterval: connectionStatus === "connected" ? false : 30_000,
     retry: 1,
   });
 
@@ -64,12 +71,9 @@ export default function MarketsPage() {
       <div className="flex items-center justify-between">
         <div>
           <div className="flex items-center gap-2 mb-1">
-            <div className="flex items-center gap-1.5 border border-[#A3E635]/20 rounded-full px-3 py-1">
-              <span className="w-2 h-2 rounded-full bg-[#A3E635] animate-pulse" />
-              <span className="text-[10px] font-bold tracking-widest text-[#A3E635]">LIVE</span>
-            </div>
+            <LiveBadge />
           </div>
-          <p className="text-xs text-[#4A4A5A]">Real-time VN & US stock prices — 30s auto-refresh</p>
+          <p className="text-xs text-[#4A4A5A]">Real-time VN & US stock prices — SignalR + 30s fallback</p>
         </div>
         <Button
           variant="outline"

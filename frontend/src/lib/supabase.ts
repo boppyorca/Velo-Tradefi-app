@@ -16,12 +16,12 @@ import { createClient } from '@supabase/supabase-js'
 import type { User } from './types'
 
 // ── Environment Variables ────────────────────────────────────────────────
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-
-if (!supabaseUrl || !supabaseAnonKey) {
-  throw new Error('Missing NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_ANON_KEY environment variables')
-}
+// Dùng placeholder trong build/CI khi chưa có env — tránh fail prerender.
+// Ở runtime (local/prod) cần set đủ env để auth hoạt động.
+const supabaseUrl =
+  process.env.NEXT_PUBLIC_SUPABASE_URL || "https://placeholder.supabase.co";
+const supabaseAnonKey =
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "placeholder-anon-key";
 
 // ── Browser Client (Client-side) ─────────────────────────────────────────
 // Used in components, hooks, pages (browser context)

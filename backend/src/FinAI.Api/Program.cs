@@ -13,10 +13,12 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 
 // Load .env file manually (simple implementation)
-// Priority: 1) backend/.env (project root), 2) current directory, 3) AppContext.BaseDirectory
+// Priority: 1) worktree backend/.env, 2) original repo backend/.env, 3) current directory
 var possiblePaths = new[]
 {
-    // Project root (backend folder) - most likely to exist
+    // Worktree backend folder (takes precedence)
+    "/Users/hosynguyen/.cursor/worktrees/Velo-Tradefi-app/fvo/backend/.env",
+    // Original repo backend folder
     "/Users/hosynguyen/Velo-Tradefi-app/backend/.env",
     // Current working directory
     Path.Combine(Directory.GetCurrentDirectory(), ".env"),
@@ -166,7 +168,27 @@ builder.Services.AddHttpClient("SupabaseAuth", client =>
     client.Timeout = TimeSpan.FromSeconds(30);
 });
 
-// ── HTTP Client for Stock/Yahoo Finance ─────────────────────────────────────────
+// ── HTTP Client for Stock Data (Finnhub + AlphaVantage + Yahoo Finance) ─────────────
+// StockDataProvider cascades through multiple free APIs:
+// 1. Finnhub — real-time US quotes, 60 req/min free tier
+// 2. AlphaVantage — free 25 req/day, good quality
+// 3. Yahoo Finance — last resort (often requires cookies)
+// Set FINNHUB_API_KEY and ALPHAVANTAGE_API_KEY env vars to enable.
+builder.Services.AddHttpClient("StockData", client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(20);
+    client.DefaultRequestHeaders.Add("User-Agent", "Mozilla/5.0 (compatible; FinAI/1.0)");
+    client.DefaultRequestHeaders.Add("Accept", "application/json, */*");
+    client.DefaultRequestHeaders.Add("Accept-Encoding", "gzip, deflate, br");
+})
+.ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+{
+    AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate | DecompressionMethods.Brotli,
+    AllowAutoRedirect = true,
+    MaxAutomaticRedirections = 5,
+});
+
+// Legacy name — keep for backwards compat in case other code references it
 builder.Services.AddHttpClient("YahooFinance", client =>
 {
     client.Timeout = TimeSpan.FromSeconds(15);
@@ -219,7 +241,9 @@ builder.Services.AddCors(options =>
 });
 
 // ── SignalR ─────────────────────────────────────────────────────────────────
-// Configure SignalR with Redis backplane for horizontal scaling (optional)
+// Configure SignalR with JWT authentication via query string access_token param.
+// SignalR clients use accessTokenFactory to send the JWT as a query param,
+// and ASP.NET Core will validate it automatically via OnMessageReceived.
 builder.Services.AddSignalR(options =>
 {
     options.EnableDetailedErrors = builder.Environment.IsDevelopment();
@@ -230,6 +254,35 @@ builder.Services.AddSignalR(options =>
 {
     options.PayloadSerializerOptions.PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase;
 });
+
+// Configure JWT Bearer to read tokens from SignalR query string.
+// SignalR convention: clients pass the token as ?access_token=<jwt>
+if (useSupabaseAuth)
+{
+    builder.Services.Configure<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme, options =>
+    {
+        options.Events = new JwtBearerEvents
+        {
+            OnMessageReceived = context =>
+            {
+                var accessToken = context.Request.Query["access_token"];
+                var path = context.HttpContext.Request.Path;
+                if (!string.IsNullOrEmpty(accessToken) &&
+                    path.StartsWithSegments("/hubs"))
+                {
+                    context.Token = accessToken;
+                }
+                return Task.CompletedTask;
+            },
+            OnAuthenticationFailed = context =>
+            {
+                var logger2 = context.HttpContext.RequestServices.GetService<ILogger<Program>>();
+                logger2?.LogWarning("SignalR JWT auth failed: {Error}", context.Exception.Message);
+                return Task.CompletedTask;
+            }
+        };
+    });
+}
 
 // ── Redis Cache ───────────────────────────────────────────────────────────────
 var redisUrl = builder.Configuration["REDIS_URL"];
@@ -249,7 +302,7 @@ builder.Services.AddScoped<IWatchlistRepository, WatchlistRepository>();
 builder.Services.AddScoped<IStockService>(sp =>
 {
     var httpFactory = sp.GetRequiredService<IHttpClientFactory>();
-    var http = httpFactory.CreateClient("YahooFinance");
+    var http = httpFactory.CreateClient("StockData"); // cascading: Finnhub → AlphaVantage → Yahoo
     var logger = sp.GetRequiredService<ILogger<StockService>>();
     return new StockService(http, logger);
 });
@@ -289,11 +342,11 @@ builder.Services.AddSingleton<IRedisCacheService>(sp =>
 // ── SignalR Stock Broadcaster ─────────────────────────────────────────────────
 builder.Services.AddSingleton<IStockPriceBroadcaster, SignalRStockBroadcaster>();
 
+// ── Stock Polling Background Service ─────────────────────────────────────────
+builder.Services.AddHostedService<StockPollingBackgroundService>();
+
 // ── Web3 Signature Service ─────────────────────────────────────────────────────
 builder.Services.AddSingleton<IWeb3SignatureService, Web3SignatureService>();
-
-// ── SignalR Stock Broadcaster ─────────────────────────────────────────────────
-builder.Services.AddSingleton<IStockPriceBroadcaster, SignalRStockBroadcaster>();
 
 // ── Program ────────────────────────────────────────────────────────────────────
 var app = builder.Build();

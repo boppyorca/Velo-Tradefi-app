@@ -1,0 +1,12 @@
+{
+  "symbol": "AAPL",
+  "val_mae": 2.5315,
+  "val_rmse": 2.996,
+  "val_mape": 1.01,
+  "train_loss_final": 0.038377,
+  "val_loss_final": 0.057099,
+  "epochs_trained": 16,
+  "elapsed_seconds": 2.9,
+  "model_path": "/Users/hosynguyen/.cursor/worktrees/Velo-Tradefi-app/fvo/ml-service/models/lstm_AAPL.keras",
+  "scaler_path": "/Users/hosynguyen/.cursor/worktrees/Velo-Tradefi-app/fvo/ml-service/models/scaler_AAPL.json"
+}
