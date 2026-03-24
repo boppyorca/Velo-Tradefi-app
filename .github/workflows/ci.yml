@@ -186,7 +186,7 @@ jobs:
       - name: Build Docker images
         run: |
           echo "Building Docker images..."
-          docker compose build --parallel
+          docker compose build
         env:
           DOCKER_BUILDKIT: 1
 
