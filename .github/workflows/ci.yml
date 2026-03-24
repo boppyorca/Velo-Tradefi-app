@@ -178,6 +178,10 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Create frontend .env.production for Docker
+        run: |
+          cp frontend/.env.production.example frontend/.env.production
+
       - name: Validate docker-compose.yml
         run: |
           echo "Validating docker-compose.yml..."
