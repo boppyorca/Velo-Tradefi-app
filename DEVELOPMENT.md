@@ -481,7 +481,13 @@ railway up
 
 ### 4. CI/CD Pipeline
 
-**GitHub Actions workflow** đã được setup tự động:
+**GitHub Actions workflow** đã được setup tự động. Để Frontend Build pass với Supabase thật, thêm Secrets trong **Settings > Secrets and variables > Actions**:
+- `NEXT_PUBLIC_SUPABASE_URL`
+- `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+
+*(Nếu không set, build vẫn pass nhờ placeholder fallback — chỉ auth sẽ không hoạt động trong CI.)*
+
+**Workflow:**
 
 ```
 Push to develop ──▶ CI Pipeline ──▶ Deploy to Staging

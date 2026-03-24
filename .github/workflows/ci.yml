@@ -156,6 +156,8 @@ jobs:
         run: npm run build
         env:
           NEXT_TELEMETRY_DISABLED: 1
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
 
       - name: Upload build artifacts
         if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
@@ -179,19 +181,19 @@ jobs:
       - name: Validate docker-compose.yml
         run: |
           echo "Validating docker-compose.yml..."
-          docker-compose config --quiet && echo "✓ docker-compose.yml is valid"
+          docker compose config --quiet && echo "✓ docker-compose.yml is valid"
 
       - name: Build Docker images
         run: |
           echo "Building Docker images..."
-          docker-compose build --parallel
+          docker compose build --parallel
         env:
           DOCKER_BUILDKIT: 1
 
       - name: Test Docker startup
         run: |
           echo "Starting services..."
-          timeout 120 docker-compose up -d --wait || true
+          timeout 120 docker compose up -d --wait || true
           
           echo "Checking backend health..."
           for i in {1..30}; do
@@ -224,7 +226,7 @@ jobs:
 
       - name: Cleanup
         if: always()
-        run: docker-compose down -v
+        run: docker compose down -v
 
   # ── Deploy to Railway (Production) ─────────────────────────────
   deploy-production:
