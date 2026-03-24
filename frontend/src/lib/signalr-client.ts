@@ -5,7 +5,8 @@
  * - This is a singleton that manages one SignalR connection per app lifecycle.
  * - The `useStockSignalR` hook subscribes/unsubscribes to symbols and merges
  *   incoming updates into the React Query cache for seamless real-time UX.
- * - Works with the Next.js BFF proxy: browser → /bff/hubs/stock-price → backend.
+ * - Browser connects directly to backend SignalR hub (CORS-enabled).
+ * - JWT tokens are sent as query param ?access_token=<jwt> for authentication.
  */
 
 "use client";
@@ -54,16 +55,25 @@ function isLocalLoopbackApiUrl(url: string): boolean {
     const u = new URL(url);
     const host = u.hostname.toLowerCase();
     const port = u.port || (u.protocol === "https:" ? "443" : "80");
-    return (host === "localhost" || host === "127.0.0.1") && port === "5000";
+    return (host === "localhost" || host === "127.0.0.1") && (port === "5000" || port === "5001");
   } catch {
     return false;
   }
 }
 
 /**
- * Determine the SignalR hub URL.
- * Browser: uses same-origin /bff/hubs/stock-price via Next.js BFF proxy.
- * Server: calls BACKEND_INTERNAL_URL or falls back to 127.0.0.1:5000.
+ * Get the JWT token from localStorage.
+ * Returns empty string if not authenticated or localStorage is unavailable.
+ */
+function getJwtToken(): string {
+  if (typeof window === "undefined") return "";
+  return localStorage.getItem("velo_token") ?? "";
+}
+
+/**
+ * Determine the SignalR hub URL with optional JWT token.
+ * Browser: calls backend directly (CORS-enabled on backend) at http://127.0.0.1:5001/hubs/stock-price.
+ * Server: calls BACKEND_INTERNAL_URL or falls back to 127.0.0.1:5001.
  */
 function getHubUrl(): string {
   const configured = process.env.NEXT_PUBLIC_SIGNALR_URL?.trim();
@@ -75,15 +85,15 @@ function getHubUrl(): string {
     return `${apiUrl}/hubs/stock-price`;
   }
 
-  // Browser: use same-origin BFF proxy
+  // Browser: call backend directly (CORS-enabled)
   if (typeof window !== "undefined") {
-    return "/bff/hubs/stock-price";
+    return "http://127.0.0.1:5001/hubs/stock-price";
   }
 
   // Server: call backend directly
   const internal =
     process.env.BACKEND_INTERNAL_URL?.trim() ||
-    "http://127.0.0.1:5000";
+    "http://127.0.0.1:5001";
   return `${internal}/hubs/stock-price`;
 }
 
@@ -180,15 +190,17 @@ class StockSignalRConnection {
 
     this._setStatus("connecting");
 
-    const url = getHubUrl();
+    const baseUrl = getHubUrl();
+    const jwtToken = getJwtToken();
+
+    // Build hub URL with optional JWT token as query param.
+    // SignalR convention: ?access_token=<jwt> is read by the server's OnMessageReceived handler.
+    const hubUrl = jwtToken
+      ? `${baseUrl}${baseUrl.includes("?") ? "&" : "?"}access_token=${encodeURIComponent(jwtToken)}`
+      : baseUrl;
 
     const builder = new signalR.HubConnectionBuilder()
-      .withUrl(url, {
-        accessTokenFactory: () => {
-          if (typeof window === "undefined") return Promise.resolve("");
-          return localStorage.getItem("velo_token") ?? "";
-        },
-      })
+      .withUrl(hubUrl)
       .withAutomaticReconnect(this._retryPolicy)
       .withStatefulReconnect()
       .configureLogging(
@@ -222,6 +234,7 @@ class StockSignalRConnection {
       await this._hub.start();
       this._setStatus("connected");
       await this._resubscribeGroups();
+      console.debug("[SignalR] Connected. Authenticated:", !!jwtToken);
     } catch (error) {
       this._setStatus("disconnected");
       console.error("[SignalR] Failed to start connection:", error);
@@ -328,4 +341,3 @@ class StockSignalRConnection {
 // ── Singleton export ───────────────────────────────────────────────────────────
 
 export const stockSignalR = new StockSignalRConnection();
-

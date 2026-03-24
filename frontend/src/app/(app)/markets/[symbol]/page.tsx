@@ -9,6 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PredictionChart, StockChart } from "@/components/features";
 import { cn } from "@/lib/utils";
 import { useStockQuote, useStockHistory } from "@/lib/hooks";
+import { useStockSignalR, LiveBadge } from "@/lib/useStockSignalR";
 import { predictionApi } from "@/lib/api-client";
 import {
   ArrowLeft,
@@ -51,6 +52,10 @@ export default function StockDetailPage() {
   const [watched, setWatched] = useState(false);
   const [timeframe, setTimeframe] = useState<Timeframe>("1M");
   const [activeModel, setActiveModel] = useState<"lstm" | "prophet">("lstm");
+
+  // ── SignalR real-time connection ──────────────────────────────────────────
+  // Subscribe to this specific symbol for live price updates
+  const { connectionStatus } = useStockSignalR({ symbols: [symbol] });
 
   const { data: quote, isLoading: quoteLoading, error: quoteError } = useStockQuote(symbol);
   const { data: history, isLoading: historyLoading } = useStockHistory(symbol, timeframe);
@@ -129,6 +134,7 @@ export default function StockDetailPage() {
                 >
                   {watched ? <Star className="w-4 h-4 fill-current" /> : <StarOff className="w-4 h-4" />}
                 </button>
+                <LiveBadge status={connectionStatus} />
               </div>
               <p className="text-sm text-[#8A8A9A]">{quote?.name ?? "—"}</p>
             </>

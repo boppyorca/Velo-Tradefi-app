@@ -78,9 +78,9 @@ export default function DashboardPage() {
     : "Welcome back, Trader";
 
   // ── SignalR real-time connection ──────────────────────────────────────────
-  // Subscribe to all markets (VN + US) for real-time updates
+  // Subscribe to ALL markets (VN + US) for real-time updates
   // SignalR updates are merged into React Query cache automatically
-  const { connectionStatus } = useStockSignalR({});
+  const { connectionStatus } = useStockSignalR({ market: undefined });
 
   // ── Data queries ─────────────────────────────────────────────────────────
   // Polling kept as fallback: when SignalR disconnects (e.g. network loss),

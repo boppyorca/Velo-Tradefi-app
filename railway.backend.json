@@ -1,0 +1,26 @@
+{
+  "name": "VeloTradeFi Backend",
+  "lang": "dotnet",
+  "dockerfile": {
+    "set": true,
+    "path": "backend/Dockerfile"
+  },
+  "env": {
+    "ASPNETCORE_ENVIRONMENT": {
+      "value": "Production"
+    },
+    "ASPNETCORE_URLS": {
+      "value": "http://+:8080"
+    }
+  },
+  "port": 8080,
+  "healthCheck": {
+    "path": "/health"
+  },
+  "domains": [
+    {
+      "name": "api.velotradefi.com",
+      "type": "PROXY"
+    }
+  ]
+}

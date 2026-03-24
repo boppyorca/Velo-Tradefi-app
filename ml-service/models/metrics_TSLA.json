@@ -1,0 +1,12 @@
+{
+  "symbol": "TSLA",
+  "val_mae": 9.3615,
+  "val_rmse": 10.6718,
+  "val_mape": 2.45,
+  "train_loss_final": 0.006833,
+  "val_loss_final": 0.008111,
+  "epochs_trained": 32,
+  "elapsed_seconds": 4.7,
+  "model_path": "/Users/hosynguyen/.cursor/worktrees/Velo-Tradefi-app/fvo/ml-service/models/lstm_TSLA.keras",
+  "scaler_path": "/Users/hosynguyen/.cursor/worktrees/Velo-Tradefi-app/fvo/ml-service/models/scaler_TSLA.json"
+}

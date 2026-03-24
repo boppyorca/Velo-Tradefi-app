@@ -5,19 +5,24 @@
  * - React Query handles the initial data fetch and provides cache/suspense.
  * - SignalR handles real-time updates — when a push arrives, we merge it
  *   into the React Query cache so UI re-renders automatically.
- * - The LIVE badge now reflects actual SignalR connectivity, not polling.
+ * - The LIVE badge reflects actual SignalR connectivity, not polling.
  *
  * Usage:
- *   const { connectionStatus } = useStockSignalR({ market: "VN" | "US" | undefined });
- *   const { data: stocks } = useQuery({ queryKey: ["stocks"], ... });
- *   // stocks are automatically updated by SignalR push
+ *   // Dashboard / Markets: subscribe to all VN+US updates
+ *   const { connectionStatus } = useStockSignalR({});
+ *
+ *   // Stock detail page: subscribe to a specific symbol
+ *   const { connectionStatus } = useStockSignalR({ symbols: ["AAPL", "TSLA"] });
+ *
+ *   // Subscribe to a specific market
+ *   const { connectionStatus } = useStockSignalR({ market: "US" });
  */
 
 "use client";
 
 import { useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { stockSignalR, type ConnectionStatus, type StockBatchUpdate } from "./signalr-client";
+import { stockSignalR, type ConnectionStatus, type StockPriceUpdate, type StockBatchUpdate } from "./signalr-client";
 import type { Stock } from "./types";
 
 // ── Hook ────────────────────────────────────────────────────────────────────────
@@ -97,6 +102,7 @@ export function useStockSignalR(options: UseStockSignalROptions = {}) {
   }, [symbols?.join(",")]);
 
   // ── Merge incoming batch updates into React Query cache ─────────────────────
+  // Batch updates arrive from StockPollingBackgroundService (all subscribed stocks)
 
   useEffect(() => {
     const unsub = stockSignalR.batchUpdate$.subscribe((updates) => {
@@ -109,6 +115,7 @@ export function useStockSignalR(options: UseStockSignalROptions = {}) {
   }, [queryClient]);
 
   // ── Merge incoming single updates into React Query cache ────────────────────
+  // Single updates arrive from symbol-specific broadcasts (e.g., detail page subscribed to one symbol)
 
   useEffect(() => {
     const unsub = stockSignalR.stockUpdate$.subscribe((update) => {
@@ -127,9 +134,9 @@ export function useStockSignalR(options: UseStockSignalROptions = {}) {
 
 function mergeSingleUpdateIntoCache(
   queryClient: ReturnType<typeof useQueryClient>,
-  update: StockBatchUpdate
+  update: StockPriceUpdate
 ) {
-  // Update all stock query caches that might contain this symbol
+  // Update all stock query caches that might contain this symbol (list views)
   queryClient.setQueriesData<Stock[]>(
     { queryKey: ["stocks"] },
     (oldData) => {
@@ -147,6 +154,22 @@ function mergeSingleUpdateIntoCache(
             }
           : stock
       );
+    }
+  );
+
+  // Update the single-stock detail cache (stock detail page)
+  queryClient.setQueriesData<Stock>(
+    { queryKey: ["stock", update.symbol.toUpperCase()] },
+    (oldData) => {
+      if (!oldData) return oldData;
+      return {
+        ...oldData,
+        price: update.price,
+        change: update.change,
+        changePercent: update.changePercent,
+        volume: update.volume,
+        updatedAt: update.timestamp,
+      };
     }
   );
 }

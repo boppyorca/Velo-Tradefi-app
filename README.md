@@ -12,7 +12,7 @@ Velo là nền tảng theo dõi chứng khoán và tiền mã hoá tích hợp A
 |------|-----------|
 | Frontend | Next.js 16 + TailwindCSS v4 + shadcn/ui + Zustand + React Query |
 | Backend | ASP.NET Core 8 + Clean Architecture |
-| AI/ML | Python FastAPI + LSTM + Prophet |
+| AI/ML | Python FastAPI + Random Forest (Scikit-Learn) |
 | Database | Supabase (PostgreSQL) |
 | Cache | Redis |
 | Auth | Supabase Auth (Google OAuth + Email/Password) |
@@ -22,8 +22,8 @@ Velo là nền tảng theo dõi chứng khoán và tiền mã hoá tích hợp A
 
 ## Các module chính
 
-- **Theo dõi chứng khoán** — Giá realtime VN (HOSE/HNX) & US (NYSE/NASDAQ)
-- **AI Dự đoán** — Dự báo giá 7 ngày bằng LSTM + Prophet
+- **Theo dõi chứng khoán** — Giá realtime VN (HOSE/HNX) & US (NYSE/NASDAQ), cập nhật mỗi 30s qua SignalR
+- **AI Dự đoán** — Dự báo giá 7 ngày bằng Random Forest (VN: Yahoo Finance, US: Alpha Vantage)
 - **Ví Web3** — Tích hợp MetaMask + số dư ETH/ERC20 + signature verification
 - **Memecoin Tracker** — Giá memecoin qua CoinGecko (20+ coins)
 - **Tin tức AI** — Tin tức AI & tech tổng hợp qua Hacker News API
@@ -61,10 +61,10 @@ Velo-Tradefi-app/
 │   ├── migrations/                  # SQL migrations
 │   └── Dockerfile                  # Multi-stage Docker build
 │
-├── ml-service/                        # Python FastAPI ML Service
-│   ├── main.py                      # FastAPI app entry point
+├── ml-service/                        # Python FastAPI ML Service (Random Forest)
+│   ├── main.py                      # FastAPI app entry point (v2.1.0)
 │   ├── Dockerfile                    # Python Docker build
-│   └── requirements.txt             # Dependencies
+│   └── requirements.txt             # Dependencies (FastAPI, scikit-learn, prophet)
 │
 ├── docker-compose.yml                # Local development stack
 ├── FinAI_Project_Plan.md             # Chi tiết kỹ thuật
@@ -91,7 +91,7 @@ Velo-Tradefi-app/
 ### Predictions
 | Method | Endpoint | Mô tả |
 |--------|----------|--------|
-| GET | `/api/predictions/{symbol}` | Dự đoán giá (LSTM/Prophet) |
+| GET | `/api/predictions/{symbol}` | Dự đoán giá (Random Forest + SMA/RSI features) |
 | GET | `/api/predictions/{symbol}/latest` | Dự đoán mới nhất (từ cache) |
 | GET | `/api/predictions/{symbol}/history` | Lịch sử dự đoán |
 
@@ -133,15 +133,21 @@ Velo-Tradefi-app/
 # Copy và chỉnh sửa .env
 cp .env.example .env
 
-# Khởi động tất cả services
-docker-compose up
+# Backend only (ML service chạy riêng)
+cd backend && dotnet run --project src/FinAI.Api
+
+# Hoặc tất cả services (cần Redis local)
+docker-compose up backend ml-service redis postgres
+
+# ML Service chạy riêng (khuyến nghị)
+cd ml-service && python3 main.py
 
 # Services sẽ chạy:
-# - Frontend: http://localhost:3000
-# - Backend: http://localhost:5000
+# - Backend: http://localhost:5001
 # - ML Service: http://localhost:8000
 # - PostgreSQL: localhost:5432
 # - Redis: localhost:6379
+# - Frontend: chạy riêng `cd frontend && npm run dev`
 ```
 
 ### Manual Setup
@@ -184,34 +190,84 @@ FRONTEND_URL=http://localhost:3000
 
 ## Roadmap - Trạng thái hoàn thành
 
+> Cập nhật: 2026-03-24 | Worktree: `fvo`
+
 ### ✅ Đã hoàn thành
 
 | Module | Trạng thái | Chi tiết |
 |--------|-------------|----------|
 | **Backend API** | ✅ Hoàn thành | 7 controllers, 12 services |
 | **Frontend Pages** | ✅ Hoàn thành | Dashboard, Markets, AI Predict, Web3, News, Settings |
-| **Auth** | ✅ Hoàn thành | Email/password + Google OAuth |
-| **Stock Tracking** | ✅ Hoàn thành | VN (HOSE) + US (NASDAQ/NYSE) |
+| **Auth** | ✅ Hoàn thành | Email/password + Google OAuth (Supabase) |
+| **Stock Tracking** | ✅ Hoàn thành | VN (HOSE/HNX) + US (NASDAQ/NYSE), cascading data provider |
+| **Cascading Data Provider** | ✅ Hoàn thành | Finnhub → iTick → AlphaVantage → Yahoo Finance → Mock |
+| **Stock History** | ✅ Hoàn thành | `/api/stocks/{symbol}/history` — 6 timeframes (1D/1W/1M/3M/1Y/ALL) |
 | **Memecoin Tracking** | ✅ Hoàn thành | 20+ memecoins qua CoinGecko |
 | **News Feed** | ✅ Hoàn thành | Hacker News API |
 | **Watchlist** | ✅ Hoàn thành | Backend + Frontend |
 | **Web3 Wallet** | ✅ Hoàn thành | MetaMask connect + balance + signature verification |
-| **SignalR Hub** | ✅ Hoàn thành | StockPriceHub cho realtime |
-| **Redis Cache** | ✅ Hoàn thành | TTL caching (VN:15m, memecoin:30s, prediction:1h) |
-| **Docker Support** | ✅ Hoàn thành | Backend Dockerfile + docker-compose.yml |
-| **SQL Migration** | ✅ Hoàn thành | Supabase schema với RLS |
+| **SignalR Hub** | ✅ Hoàn thành | StockPriceHub + Frontend `useStockSignalR` hook |
+| **Frontend Realtime** | ✅ Hoàn thành | Live badge, React Query cache merge, auto-reconnect |
+| **Background Polling** | ✅ Hoàn thành | `StockPollingBackgroundService` — poll mỗi 30s, broadcast SignalR |
+| **Redis Cache** | ✅ Hoàn thành | Graceful degradation khi Redis offline |
+| **ML Service** | ✅ Hoàn thành | FastAPI + Random Forest, multi-source (Yahoo Finance VN + Alpha Vantage US) |
+| **AI Prediction Endpoint** | ✅ Hoàn thành | `/api/predictions/{symbol}` gọi ML service thật |
+| **VN Stocks Price (ML)** | ✅ Hoàn thành | Yahoo Finance `.VN` suffix — VNM: 60,800 VND ✅ |
+| **Docker Support** | ✅ Hoàn thành | Backend Dockerfile + docker-compose.yml (backend + ml + postgres + redis) |
+| **Worktree Development** | ✅ Hoàn thành | Isolated worktree `fvo`, env config riêng |
+| **Supabase Integration** | ✅ Hoàn thành | Auth + Database + RLS policies |
 
 ### ❌ Chưa hoàn thành
 
 | Module | Độ ưu tiên | Chi tiết |
 |--------|-------------|----------|
-| **AI/ML Service** | 🔴 Cao | Train LSTM model thực sự, hiện chỉ có heuristic fallback |
-| **ML Model Files** | 🔴 Cao | Chưa có `.h5` files cho LSTM, chưa train thực |
-| **Frontend SignalR** | 🟡 Vừa | Chưa kết nối frontend với SignalR hub |
-| **Background Stock Polling** | 🟡 Vừa | Chưa implement polling service để broadcast updates |
-| **Production Deploy** | 🟡 Vừa | Chưa deploy lên Railway/Vercel |
-| **CI/CD Pipeline** | 🟢 Thấp | Chưa có GitHub Actions workflow |
-| **Testing** | 🟢 Thấp | Chưa có unit/integration tests |
+| **Production Deploy** | 🔴 Cao | Railway (backend + ml-service) + Vercel (frontend) |
+| **CI/CD Pipeline** | 🟡 Vừa | Chưa có GitHub Actions workflow |
+| **Frontend Dockerfile** | 🟡 Vừa | docker-compose.yml có comment nhưng chưa tạo `frontend/Dockerfile` |
+| **Redis Production** | 🟡 Vừa | Hiện dùng placeholder URL — cần setup Redis thật (Railway Redis hoặc Upstash) |
+| **Unit/Integration Tests** | 🟢 Thấp | Chưa có test coverage |
+| **Train thêm LSTM cho VN stocks** | 🟡 Vừa | Yahoo Finance rate-limit — cần train VNM, FPT, TCB... khi quota hết |
+| **VN Stocks Yahoo Finance Edge Cases** | 🟢 Thấp | Một số ticker VN có thể confused với cổ phiếu cùng mã thị trường khác |
+
+### ✅ Mới hoàn thành
+
+| Module | Chi tiết |
+|--------|----------|
+| **LSTM Real Model** | Train LSTM 2-layer (64→32 units) + Dropout(0.2) + Dense(16→1). Data: Alpha Vantage. Trained: AAPL (MAPE 1.01%), TSLA (MAPE 2.45%). Files: `models/lstm_AAPL.keras`, `models/lstm_TSLA.keras` |
+| **LSTM Training Pipeline** | `train_lstm.py` — auto-download data → feature engineer → train → eval → save. Supports all US/VN stocks |
+| **LSTM Inference** | `lstm_inference.py` — standalone inference script. `main.py` v2.2.0 tích hợp: auto (LSTM→RF fallback), `?model=lstm`, `?model=random_forest` |
+| **Dual Model System** | Priority: trained LSTM → Random Forest online. Cache LSTM models in memory after first load |
+
+### 🗺️ Kiến trúc đã xác lập
+
+```
+Browser (Next.js)
+│
+├── /dashboard, /markets/* ──────────→ Backend (ASP.NET Core :5001)
+│   │                                      │
+│   │   SignalR ◄──┐                      │
+│   │              │  broadcast             │
+│   │         StockPollingBackgroundService
+│   │              │  (every 30s)         │
+│   └── React Query ───┘                   │
+│                                          │
+│   /api/predictions/{symbol} ──────────→ ML Service (FastAPI :8000)
+│                                          │   ├── Yahoo Finance (VN stocks)
+│                                          │   └── Alpha Vantage (US stocks)
+│
+├── /web3 ────────────────────────────────→ Backend → Ethereum RPC
+└── /news ────────────────────────────────→ Backend → Hacker News API
+```
+
+### 📦 Services đang chạy local
+
+| Service | URL | Port | Status |
+|---------|-----|------|--------|
+| Frontend (Next.js) | http://localhost:3000 | 3000 | ✅ Running |
+| Backend (ASP.NET) | http://localhost:5001 | 5001 | ✅ Running |
+| ML Service (FastAPI) | http://localhost:8000 | 8000 | ✅ Running |
+| PostgreSQL (Supabase Cloud) | db.shloeixwkwzyxwwzmkmh.supabase.co | 5432 | ✅ Connected |
+| Redis | — | 6379 | ⚠️ Offline (graceful degradation active) |
 
 ## Thiết kế (Design System)
 

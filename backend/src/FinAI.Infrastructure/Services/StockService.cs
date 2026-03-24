@@ -6,6 +6,7 @@ using System.Text.Json.Serialization;
 using FinAI.Core.Interfaces;
 using FinAI.Core.Models;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 public class StockService : IStockService
 {
@@ -13,7 +14,8 @@ public class StockService : IStockService
     private readonly ILogger<StockService> _logger;
 
     // Symbol → (Yahoo Finance ticker, Company name, Exchange)
-    private static readonly Dictionary<string, (string YahooTicker, string Name, string Exchange)> SymbolMap = new(StringComparer.OrdinalIgnoreCase)
+    // Made public static so StockDataProvider can use it
+    public static readonly Dictionary<string, (string YahooTicker, string Name, string Exchange)> SymbolMap = new(StringComparer.OrdinalIgnoreCase)
     {
         // US Stocks (NASDAQ/NYSE)
         ["AAPL"]  = ("AAPL",   "Apple Inc.",             "NASDAQ"),
@@ -114,22 +116,15 @@ public class StockService : IStockService
 
     public async Task<IEnumerable<StockDto>> GetStocksAsync(string? exchange = null, int page = 1, int pageSize = 20)
     {
-        IEnumerable<StockDto> allStocks;
+        var symbolsToFetch = FallbackStocks.Keys.ToList();
 
-        // Try to fetch live data for known symbols
-        var liveStocks = new List<StockDto>();
-        var symbolsToFetch = FallbackStocks.Values.ToList();
+        // Use cascading data provider (Finnhub → AlphaVantage → Yahoo → mock)
+        var dataProvider = new StockDataProvider(_http, NullLogger<StockDataProvider>.Instance);
+        var liveResults = await dataProvider.FetchBatchAsync(symbolsToFetch);
 
-        var tasks = symbolsToFetch.Select(s => FetchLiveQuoteAsync(s.Symbol)).ToList();
-        await Task.WhenAll(tasks);
-
-        foreach (var task in tasks)
-        {
-            if (task.Result is StockDto dto && dto != null)
-                liveStocks.Add(dto);
-        }
-
-        allStocks = liveStocks.Count > 0 ? liveStocks : FallbackStocks.Values;
+        IEnumerable<StockDto> allStocks = liveResults.Count > 0
+            ? liveResults.Values
+            : FallbackStocks.Values;
 
         // Filter by exchange
         if (!string.IsNullOrWhiteSpace(exchange))
@@ -143,21 +138,20 @@ public class StockService : IStockService
             };
         }
 
-        var total = allStocks.Count();
-        var paged = allStocks
+        return allStocks
             .Skip((page - 1) * pageSize)
             .Take(pageSize);
-
-        return paged;
     }
 
     public async Task<StockDto?> GetStockQuoteAsync(string symbol)
     {
-        // Try live first
-        var live = await FetchLiveQuoteAsync(symbol);
+        // Use cascading data provider
+        var dataProvider = new StockDataProvider(_http, NullLogger<StockDataProvider>.Instance);
+        var live = await dataProvider.FetchSingleAsync(symbol);
+
         if (live != null) return live;
 
-        // Fallback
+        // Fallback to static data
         if (FallbackStocks.TryGetValue(symbol.ToUpperInvariant(), out var fallback))
             return fallback;
 
