@@ -164,3 +164,35 @@ export interface MemecoinsResponse {
 export interface NewsResponse {
   data: NewsItem[];
 }
+
+// ── Price Alerts ─────────────────────────────────────────────────────────────────
+
+export type AlertConditionType = "price_above" | "price_below" | "percent_change";
+
+export interface AlertCondition {
+  type: AlertConditionType;
+  value: number;
+}
+
+export interface AlertRule {
+  id: string;
+  name: string;
+  symbol: string;
+  targetType: "STOCK" | "TOKEN";
+  basePrice: number;
+  conditions: AlertCondition[];
+  isActive: boolean;
+  createdAt: string;
+  updatedAt?: string;
+}
+
+export interface AlertNotification {
+  alertId: string;
+  alertName: string;
+  symbol: string;
+  currentPrice: number;
+  basePrice: number;
+  triggeredCondition: string;
+  triggeredValue: number;
+  triggeredAt: string;
+}

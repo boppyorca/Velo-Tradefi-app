@@ -18,6 +18,7 @@ public class StockPollingBackgroundService : BackgroundService
     private readonly IRedisCacheService _cache;
     private readonly ILogger<StockPollingBackgroundService> _logger;
     private readonly HttpClient _http;
+    private readonly IAlertService _alertService;
 
     // Polling interval (configurable via env var)
     private static readonly TimeSpan PollingInterval = TimeSpan.FromSeconds(
@@ -50,12 +51,14 @@ public class StockPollingBackgroundService : BackgroundService
         IStockPriceBroadcaster broadcaster,
         IRedisCacheService cache,
         ILogger<StockPollingBackgroundService> logger,
-        IHttpClientFactory httpFactory)
+        IHttpClientFactory httpFactory,
+        IAlertService alertService)
     {
         _broadcaster = broadcaster;
         _cache = cache;
         _logger = logger;
         _http = httpFactory.CreateClient("StockData"); // cascading: Finnhub → AlphaVantage → Yahoo
+        _alertService = alertService;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -122,6 +125,16 @@ public class StockPollingBackgroundService : BackgroundService
 
             // Always cache the latest
             await CacheStockPriceAsync(kvp.Key, kvp.Value);
+
+            // Check alerts for this symbol
+            try
+            {
+                await _alertService.CheckAndFireAlertsAsync(kvp.Key, kvp.Value.Price);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error checking alerts for {Symbol}", kvp.Key);
+            }
         }
 
         if (updatedStocks.Count > 0)

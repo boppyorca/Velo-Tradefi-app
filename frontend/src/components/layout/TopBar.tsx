@@ -12,6 +12,7 @@ import {
 import { useAuthStore } from "@/lib/auth-store";
 import { useAuth } from "@/lib/useAuth";
 import { useHasVeloSession } from "@/lib/use-velo-session";
+import { useNotifications } from "@/lib/notifications-context";
 import { cn } from "@/lib/utils";
 
 export function TopBar() {
@@ -19,6 +20,9 @@ export function TopBar() {
   const { user } = useAuthStore();
   const { logout } = useAuth();
   const hasSession = useHasVeloSession();
+  const { notifications, markAllRead } = useNotifications();
+
+  const unreadCount = notifications.filter((n) => !n.read).length;
 
   const displayName =
     user?.fullName?.trim() || user?.email?.split("@")[0] || "User";
@@ -45,14 +49,19 @@ export function TopBar() {
 
       {/* Right */}
       <div className="flex items-center gap-3 ml-auto">
-        {/* Bell */}
+        {/* Bell — shows unread count */}
         <button
           type="button"
           className="w-8 h-8 rounded-lg hover:bg-white/[0.06] flex items-center justify-center transition-colors relative"
           aria-label="Notifications"
+          onClick={() => router.push("/alerts")}
         >
           <Bell className="w-[18px] h-[18px] text-[#8A8A9A]" />
-          <span className="absolute top-1 right-1 w-1.5 h-1.5 bg-velo-red rounded-full" />
+          {unreadCount > 0 && (
+            <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-[#F05252] rounded-full text-[9px] font-bold text-white flex items-center justify-center">
+              {unreadCount > 9 ? "9+" : unreadCount}
+            </span>
+          )}
         </button>
 
         {/* Wallet */}

@@ -34,6 +34,17 @@ export interface StockBatchUpdate {
   timestamp: string;
 }
 
+export interface AlertNotification {
+  alertId: string;
+  alertName: string;
+  symbol: string;
+  currentPrice: number;
+  basePrice: number;
+  triggeredCondition: string;
+  triggeredValue: number;
+  triggeredAt: string;
+}
+
 // ── Connection state ────────────────────────────────────────────────────────────
 
 export type ConnectionStatus =
@@ -45,6 +56,7 @@ export type ConnectionStatus =
 interface StockPriceClient {
   receiveStockUpdate(update: StockPriceUpdate): void;
   receiveBatchUpdate(updates: StockBatchUpdate[]): void;
+  receiveAlertNotification(notification: AlertNotification): void;
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -158,6 +170,7 @@ class StockSignalRConnection {
   private _statusListeners = new EventEmitter<ConnectionStatus>();
   private _stockUpdateListeners = new EventEmitter<StockPriceUpdate>();
   private _batchUpdateListeners = new EventEmitter<StockBatchUpdate[]>();
+  private _alertNotificationListeners = new EventEmitter<AlertNotification>();
 
   // Subscribed groups — maintained for auto-reconnect re-subscription
   private _subscribedMarkets = new Set<string>();
@@ -180,6 +193,10 @@ class StockSignalRConnection {
 
   get batchUpdate$(): EventEmitter<StockBatchUpdate[]> {
     return this._batchUpdateListeners;
+  }
+
+  get alertNotification$(): EventEmitter<AlertNotification> {
+    return this._alertNotificationListeners;
   }
 
   async connect(): Promise<void> {
@@ -215,6 +232,7 @@ class StockSignalRConnection {
     const client = this._createClientHandlers();
     this._hub.on("ReceiveStockUpdate", client.receiveStockUpdate);
     this._hub.on("ReceiveBatchUpdate", client.receiveBatchUpdate);
+    this._hub.on("ReceiveAlertNotification", client.receiveAlertNotification);
 
     // Wire up connection lifecycle events
     this._hub.onreconnecting(() => {
@@ -296,6 +314,13 @@ class StockSignalRConnection {
       receiveBatchUpdate: (updates: StockBatchUpdate[]) => {
         this._batchUpdateListeners.emit(updates);
       },
+      receiveAlertNotification: (notification: AlertNotification) => {
+        this._alertNotificationListeners.emit(notification);
+        // Dispatch custom DOM event so TopBar (outside React context) can receive it
+        window.dispatchEvent(
+          new CustomEvent("velo:alert:notification", { detail: notification })
+        );
+      },
     };
   }
 
@@ -310,6 +335,7 @@ class StockSignalRConnection {
       try {
         this._hub.off("ReceiveStockUpdate");
         this._hub.off("ReceiveBatchUpdate");
+        this._hub.off("ReceiveAlertNotification");
         await this._hub.stop();
       } catch {
         // Ignore errors during teardown

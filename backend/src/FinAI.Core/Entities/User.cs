@@ -14,4 +14,5 @@ public class User
     public ICollection<StockWatchlist> StockWatchlist { get; set; } = new List<StockWatchlist>();
     public ICollection<MemecoinWatchlist> MemecoinWatchlist { get; set; } = new List<MemecoinWatchlist>();
     public ICollection<PredictionHistory> PredictionHistories { get; set; } = new List<PredictionHistory>();
+    public ICollection<PriceAlert> PriceAlerts { get; set; } = new List<PriceAlert>();
 }

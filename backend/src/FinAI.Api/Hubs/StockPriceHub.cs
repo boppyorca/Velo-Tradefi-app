@@ -8,7 +8,19 @@ public interface IStockPriceClient
 {
     Task ReceiveStockUpdate(StockPriceUpdate update);
     Task ReceiveBatchUpdate(IEnumerable<StockPriceUpdate> updates);
+    Task ReceiveAlertNotification(AlertNotification notification);
 }
+
+public record AlertNotification(
+    Guid AlertId,
+    string AlertName,
+    string Symbol,
+    decimal CurrentPrice,
+    decimal BasePrice,
+    string TriggeredCondition,
+    decimal TriggeredValue,
+    DateTime TriggeredAt
+);
 
 public record StockPriceUpdate(
     string Symbol,
@@ -36,6 +48,22 @@ public class StockPriceHub : Hub<IStockPriceClient>
             Context.ConnectionId,
             userId,
             Context.User?.Identity?.IsAuthenticated ?? false);
+
+        // Auto-join user-specific alert group if authenticated
+        if (Context.User?.Identity?.IsAuthenticated == true && !string.IsNullOrEmpty(Context.User.Identity.Name))
+        {
+            try
+            {
+                var userGuid = Guid.Parse(Context.User.Identity.Name);
+                await Groups.AddToGroupAsync(Context.ConnectionId, $"user_{userGuid}");
+                _logger.LogInformation("Client {ConnectionId} joined alert group: user_{UserId}", Context.ConnectionId, userGuid);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Could not parse user ID for SignalR group join");
+            }
+        }
+
         await base.OnConnectedAsync();
     }
 
@@ -47,6 +75,18 @@ public class StockPriceHub : Hub<IStockPriceClient>
             Context.ConnectionId,
             userId,
             exception?.Message ?? "none");
+
+        // Leave user-specific alert group
+        if (Context.User?.Identity?.IsAuthenticated == true && !string.IsNullOrEmpty(Context.User.Identity.Name))
+        {
+            try
+            {
+                var userGuid = Guid.Parse(Context.User.Identity.Name);
+                await Groups.RemoveFromGroupAsync(Context.ConnectionId, $"user_{userGuid}");
+            }
+            catch { /* ignore */ }
+        }
+
         await base.OnDisconnectedAsync(exception);
     }
 

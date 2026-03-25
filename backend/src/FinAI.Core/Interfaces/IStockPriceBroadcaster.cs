@@ -8,4 +8,5 @@ public interface IStockPriceBroadcaster
     Task BroadcastBatchUpdateAsync(IEnumerable<StockDto> stocks);
     Task<StockDto?> GetLastPriceAsync(string symbol);
     Task<IEnumerable<string>> GetSubscribedSymbolsAsync();
+    Task RegisterSymbolAsync(string symbol);
 }

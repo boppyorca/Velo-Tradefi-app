@@ -3,6 +3,8 @@
 import type {
   AdminActivityItem,
   AdminStatCard,
+  AlertCondition,
+  AlertRule,
   AuthResponse,
   ExchangeStatusRow,
   MemecoinsResponse,
@@ -26,6 +28,21 @@ function normalizeWatchlistItem(raw: unknown): WatchlistItem {
     price: Number(r.price ?? r.Price ?? 0),
     changePercent: Number(r.changePercent ?? r.ChangePercent ?? 0),
     name: String(r.name ?? r.Name ?? ""),
+  };
+}
+
+function normalizeAlert(raw: unknown): AlertRule {
+  const r = raw as Record<string, unknown>;
+  return {
+    id: String(r.id ?? r.Id ?? ""),
+    name: String(r.name ?? r.Name ?? ""),
+    symbol: String(r.symbol ?? r.Symbol ?? ""),
+    targetType: (r.targetType ?? r.TargetType ?? "STOCK") as AlertRule["targetType"],
+    basePrice: Number(r.basePrice ?? r.BasePrice ?? 0),
+    conditions: (r.conditions ?? r.Conditions ?? []) as AlertRule["conditions"],
+    isActive: Boolean(r.isActive ?? r.IsActive ?? true),
+    createdAt: String(r.createdAt ?? r.CreatedAt ?? ""),
+    updatedAt: r.updatedAt != null ? String(r.updatedAt) : undefined,
   };
 }
 
@@ -263,4 +280,41 @@ export const adminApi = {
 export const marketsApi = {
   exchangeStatus: () =>
     request<{ success: boolean; data: ExchangeStatusRow[] }>("/api/markets/exchange-status"),
+};
+
+// ── Price Alerts ───────────────────────────────────────────────────────────
+export const alertApi = {
+  list: (): Promise<AlertRule[]> =>
+    request<{ data: unknown[]; success: boolean }>("/api/alerts").then((r) =>
+      (r.data ?? []).map(normalizeAlert)
+    ),
+
+  create: (data: {
+    name: string;
+    symbol: string;
+    targetType: string;
+    basePrice: number;
+    conditions: AlertCondition[];
+  }): Promise<AlertRule> =>
+    request<{ data: unknown; success: boolean; message: string }>("/api/alerts", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }).then((r) => normalizeAlert(r.data)),
+
+  update: (
+    id: string,
+    data: { name?: string; conditions?: AlertCondition[] }
+  ): Promise<AlertRule> =>
+    request<{ data: unknown; success: boolean; message: string }>(`/api/alerts/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    }).then((r) => normalizeAlert(r.data)),
+
+  delete: (id: string): Promise<void> =>
+    request<{ success: boolean }>(`/api/alerts/${id}`, { method: "DELETE" }).then(() => {}),
+
+  toggle: (id: string): Promise<AlertRule> =>
+    request<{ data: unknown; success: boolean }>(`/api/alerts/${id}/toggle`, {
+      method: "PATCH",
+    }).then((r) => normalizeAlert(r.data)),
 };

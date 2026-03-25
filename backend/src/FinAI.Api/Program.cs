@@ -306,6 +306,8 @@ if (!string.IsNullOrEmpty(redisUrl))
 // ── Dependency Injection ────────────────────────────────────────────────────────
 builder.Services.AddScoped<IUserRepository, UserRepository>();
 builder.Services.AddScoped<IWatchlistRepository, WatchlistRepository>();
+builder.Services.AddScoped<IAlertRepository, AlertRepository>();
+builder.Services.AddScoped<IAlertService, AlertService>();
 builder.Services.AddScoped<IStockService>(sp =>
 {
     var httpFactory = sp.GetRequiredService<IHttpClientFactory>();
