@@ -58,8 +58,9 @@ export default function SettingsPage() {
               Full Name
             </label>
             <Input
+              key={user?.id}
               className="h-9 bg-[#0A0A0C] border-white/[0.08] text-sm text-[#F0F0F0] focus:border-[#A3E635]/40 outline-none"
-              defaultValue={user?.fullName ?? "Nguyen Van A"}
+              defaultValue={user?.fullName || ""}
             />
           </div>
           <div>
@@ -67,8 +68,9 @@ export default function SettingsPage() {
               Email
             </label>
             <Input
+              key={`email-${user?.id}`}
               className="h-9 bg-[#0A0A0C] border-white/[0.08] text-sm text-[#F0F0F0] focus:border-[#A3E635]/40 outline-none"
-              defaultValue={user?.email ?? "trader@velo.finance"}
+              defaultValue={user?.email || ""}
               readOnly
             />
           </div>

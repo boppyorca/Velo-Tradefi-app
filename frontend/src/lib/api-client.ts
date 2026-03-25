@@ -1,36 +1,63 @@
 "use client";
 
-import type { AuthResponse, StocksResponse, MemecoinsResponse, NewsResponse, StockQuote, Prediction, Stock, StockHistoryPoint, WatchlistItem } from "./types";
+import type {
+  AdminActivityItem,
+  AdminStatCard,
+  AuthResponse,
+  ExchangeStatusRow,
+  MemecoinsResponse,
+  NewsResponse,
+  Prediction,
+  Stock,
+  StockHistoryPoint,
+  StockQuote,
+  StocksResponse,
+  WatchlistItem,
+} from "./types";
 
-/** True when env points at the usual local Kestrel URL — browser should use direct backend URL. */
-function isLocalLoopbackApiUrl(url: string): boolean {
-  try {
-    const u = new URL(url);
-    const host = u.hostname.toLowerCase();
-    const port = u.port || (u.protocol === "https:" ? "443" : "80");
-    return (host === "localhost" || host === "127.0.0.1") && (port === "5000" || port === "5001");
-  } catch {
-    return false;
-  }
+function normalizeWatchlistItem(raw: unknown): WatchlistItem {
+  const r = raw as Record<string, unknown>;
+  const m = String(r.market ?? r.Market ?? "US").toUpperCase();
+  return {
+    id: String(r.id ?? r.Id ?? ""),
+    symbol: String(r.symbol ?? r.Symbol ?? ""),
+    market: m === "VN" ? "VN" : "US",
+    addedAt: String(r.addedAt ?? r.AddedAt ?? ""),
+    price: Number(r.price ?? r.Price ?? 0),
+    changePercent: Number(r.changePercent ?? r.ChangePercent ?? 0),
+    name: String(r.name ?? r.Name ?? ""),
+  };
 }
 
-/**
- * Browser: use NEXT_PUBLIC_API_URL if set, otherwise fall back to direct backend URL.
- * When NEXT_PUBLIC_API_URL=http://127.0.0.1:5001, browser calls backend directly.
- * CORS is configured on the backend to allow localhost:3000 and localhost:5001.
+/** Backend API URL resolution strategy:
+ * 1. Use NEXT_PUBLIC_API_URL if set (must be reachable from the browser).
+ * 2. In browser without it → same-origin `/api/*` (Next.js rewrites to backend — Docker-safe).
+ * 3. Server-side → BACKEND_INTERNAL_URL or http://127.0.0.1:5050 (docker-compose backend publish).
  */
 function getApiBase(): string {
   const configured = process.env.NEXT_PUBLIC_API_URL?.trim()?.replace(/\/$/, "");
   if (configured) return configured;
+
   if (typeof window !== "undefined") {
-    // Browser: call backend directly (CORS-enabled on backend)
-    return "http://127.0.0.1:5001";
+    return "";
   }
-  // Server: use internal URL or localhost
   return (
     process.env.BACKEND_INTERNAL_URL?.trim().replace(/\/$/, "") ||
-    "http://127.0.0.1:5001"
+    "http://127.0.0.1:5050"
   );
+}
+
+/**
+ * Resolve the full API URL for a given endpoint.
+ * Call sites pass paths that already start with `/api/...`.
+ * When getApiBase() is empty (browser, no NEXT_PUBLIC_API_URL), return the path
+ * as-is so Next.js rewrites `/api/*` → backend — do NOT prepend `/api` again
+ * (that would produce `/api/api/stocks` and a 404 from the backend).
+ */
+function resolveUrl(endpoint: string): string {
+  const base = getApiBase();
+  if (base) return `${base}${endpoint}`;
+  return endpoint;
 }
 
 /** Normalize API payloads (.NET may send PascalCase; Yahoo decimals as strings) */
@@ -74,14 +101,23 @@ async function request<T>(
     ...options.headers,
   };
 
-  const res = await fetch(`${getApiBase()}${endpoint}`, {
+  const url = resolveUrl(endpoint);
+
+  const res = await fetch(url, {
     ...options,
     headers,
   });
 
   if (!res.ok) {
-    const error = await res.json().catch(() => ({ message: res.statusText }));
-    throw new Error(error.message ?? `HTTP ${res.status}`);
+    const raw = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+    const msg =
+      (typeof raw.message === "string" && raw.message) ||
+      (typeof raw.title === "string" && raw.title) ||
+      (res.status === 401
+        ? "Unauthorized — token missing, expired, or not a backend JWT. Sign out and sign in again."
+        : null) ||
+      res.statusText;
+    throw new Error(msg || `HTTP ${res.status}`);
   }
 
   return res.json();
@@ -102,7 +138,7 @@ export const authApi = {
     }),
 
   me: (token?: string | null) =>
-    request<{ id: string; email: string; fullName: string }>(
+    request<{ id: string; email: string; fullName: string; role: string }>(
       "/api/auth/me",
       {},
       token
@@ -187,8 +223,8 @@ export const memecoinApi = {
 // ── Watchlist ────────────────────────────────────────────────────────────────
 export const watchlistApi = {
   list: (): Promise<WatchlistItem[]> =>
-    request<{ data: WatchlistItem[]; success: boolean }>("/api/watchlist").then(
-      (r) => r.data ?? []
+    request<{ data: unknown[]; success: boolean }>("/api/watchlist").then((r) =>
+      (r.data ?? []).map(normalizeWatchlistItem)
     ),
 
   add: (symbol: string, market?: string) =>
@@ -213,4 +249,18 @@ export const newsApi = {
     const qs = new URLSearchParams(filtered).toString();
     return request<NewsResponse>(`/api/news${qs ? `?${qs}` : ""}`);
   },
+};
+
+// ── Admin (requires Admin role + backend JWT with role claim) ─────────────
+export const adminApi = {
+  dashboard: () =>
+    request<{ success: boolean; data: { stats: AdminStatCard[]; recentActivity: AdminActivityItem[] } }>(
+      "/api/admin/dashboard"
+    ),
+};
+
+// ── Markets (authenticated) ────────────────────────────────────────────────
+export const marketsApi = {
+  exchangeStatus: () =>
+    request<{ success: boolean; data: ExchangeStatusRow[] }>("/api/markets/exchange-status"),
 };

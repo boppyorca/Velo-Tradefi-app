@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { supabase, signUp } from "@/lib/supabase";
 import { setVeloTokenCookie, syncAuthCookiesToServer } from "@/lib/auth-cookies";
+import { syncBackendAuthFromSupabaseSession } from "@/lib/sync-backend-auth";
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -40,17 +41,23 @@ export default function RegisterPage() {
       }
 
       // If session is returned immediately (email confirmation disabled)
-      localStorage.setItem("velo_token", result.data.session.access_token);
-      setVeloTokenCookie(result.data.session.access_token);
+      const sess = result.data.session;
       try {
-        await syncAuthCookiesToServer(
-          result.data.session.access_token,
-          result.data.session.refresh_token ?? ""
-        );
-      } catch (e) {
-        console.warn("Cookie sync failed:", e);
+        const { user } = await syncBackendAuthFromSupabaseSession(sess);
+        router.push(user.role === "Admin" ? "/admin" : "/dashboard");
+      } catch {
+        localStorage.setItem("velo_token", sess.access_token);
+        setVeloTokenCookie(sess.access_token);
+        try {
+          await syncAuthCookiesToServer(
+            sess.access_token,
+            sess.refresh_token ?? ""
+          );
+        } catch (e) {
+          console.warn("Cookie sync failed:", e);
+        }
+        router.push("/dashboard");
       }
-      window.location.href = "/dashboard";
     } catch (err) {
       console.error("Registration error:", err);
       const message = err instanceof Error ? err.message : "An unexpected error occurred";

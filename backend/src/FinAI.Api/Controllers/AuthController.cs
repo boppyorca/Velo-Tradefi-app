@@ -1,7 +1,9 @@
 using System.Net.Http.Json;
 using System.Text.Json;
+using FinAI.Core.Entities;
 using FinAI.Core.Interfaces;
 using FinAI.Core.Models;
+using FinAI.Infrastructure.Data;
 using Microsoft.AspNetCore.Mvc;
 
 namespace FinAI.Api.Controllers;
@@ -13,15 +15,18 @@ public class AuthController : ControllerBase
     private readonly IUserRepository _userRepository;
     private readonly IConfiguration _config;
     private readonly IHttpClientFactory _httpClientFactory;
+    private readonly AppDbContext _db;
 
     public AuthController(
         IUserRepository userRepository,
         IConfiguration config,
-        IHttpClientFactory httpClientFactory)
+        IHttpClientFactory httpClientFactory,
+        AppDbContext db)
     {
         _userRepository = userRepository;
         _config = config;
         _httpClientFactory = httpClientFactory;
+        _db = db;
     }
 
     /// <summary>
@@ -72,12 +77,14 @@ public class AuthController : ControllerBase
                                    result.User.UserMetadata.TryGetValue("full_name", out var fn)
                         ? fn.GetString()
                         : "";
+                    var role = DetermineRole(result.User.Email!);
                     return Ok(new AuthResponseDto(
                         Token: result!.Session!.AccessToken,
                         User: new UserDto(
                             Guid.Parse(result.User!.Id!),
                             result.User.Email!,
-                            fullName ?? ""
+                            fullName ?? "",
+                            role
                         )
                     ));
                 }
@@ -106,6 +113,7 @@ public class AuthController : ControllerBase
             Email = request.Email.ToLowerInvariant().Trim(),
             PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.Password),
             FullName = request.FullName.Trim(),
+            Role = "User",
             CreatedAt = DateTime.UtcNow
         };
 
@@ -115,7 +123,7 @@ public class AuthController : ControllerBase
         var token = GenerateJwt(user);
         return Ok(new AuthResponseDto(
             Token: token,
-            User: new UserDto(user.Id, user.Email, user.FullName)
+            User: new UserDto(user.Id, user.Email, user.FullName, DetermineRole(user.Email))
         ));
     }
 
@@ -156,16 +164,23 @@ public class AuthController : ControllerBase
                                    result.User.UserMetadata.TryGetValue("full_name", out var fn)
                         ? fn.GetString()
                         : "";
+                    var role = DetermineRole(result.User.Email!);
+                    await LogSecurityAuditAsync(
+                        "login_ok",
+                        result.User!.Email,
+                        Guid.TryParse(result.User.Id, out var sid) ? sid : null);
                     return Ok(new AuthResponseDto(
                         Token: result!.Session!.AccessToken,
                         User: new UserDto(
                             Guid.Parse(result.User!.Id!),
                             result.User.Email!,
-                            fullName ?? ""
+                            fullName ?? "",
+                            role
                         )
                     ));
                 }
 
+                await LogSecurityAuditAsync("login_failed", request.Email, null);
                 return Unauthorized(new { success = false, message = "Invalid email or password" });
             }
             catch (Exception ex)
@@ -177,12 +192,16 @@ public class AuthController : ControllerBase
         // ── Fallback: Custom JWT (Development) ──
         var user = await _userRepository.GetByEmailAsync(request.Email.ToLowerInvariant().Trim());
         if (user is null || !BCrypt.Net.BCrypt.Verify(request.Password, user.PasswordHash))
+        {
+            await LogSecurityAuditAsync("login_failed", request.Email, null);
             return Unauthorized(new { success = false, message = "Invalid email or password" });
+        }
 
+        await LogSecurityAuditAsync("login_ok", user.Email, user.Id);
         var token = GenerateJwt(user);
         return Ok(new AuthResponseDto(
             Token: token,
-            User: new UserDto(user.Id, user.Email, user.FullName)
+            User: new UserDto(user.Id, user.Email, user.FullName, DetermineRole(user.Email))
         ));
     }
 
@@ -201,7 +220,7 @@ public class AuthController : ControllerBase
         if (user is null)
             return NotFound(new { success = false, message = "User not found" });
 
-        return Ok(new UserDto(user.Id, user.Email, user.FullName));
+        return Ok(new UserDto(user.Id, user.Email, user.FullName, user.Role));
     }
 
     /// <summary>
@@ -334,44 +353,54 @@ public class AuthController : ControllerBase
                     ? fn.GetString() ?? ""
                     : "";
 
-                // Upsert user in backend DB
+                // Upsert user in backend DB — JWT sub MUST equal users.id (FK for watchlist, etc.)
                 var email = supabaseUser.Email ?? "";
+                Guid appUserId;
+                FinAI.Core.Entities.User? dbUser = null;
+
                 if (!string.IsNullOrEmpty(email) && _userRepository is not null)
                 {
                     try
                     {
                         var existing = await _userRepository.GetByEmailAsync(email.ToLowerInvariant());
-                        if (existing is null)
+                        if (existing is not null)
                         {
+                            dbUser = existing;
+                            if (string.IsNullOrEmpty(existing.FullName) && !string.IsNullOrEmpty(fullName))
+                            {
+                                existing.FullName = fullName;
+                                await _userRepository.UpdateAsync(existing);
+                            }
+                        }
+                        else
+                        {
+                            var newId = Guid.TryParse(supabaseUser.Id, out var sid) ? sid : Guid.NewGuid();
+                            var roleForDb = DetermineRole(email);
                             var newUser = new FinAI.Core.Entities.User
                             {
-                                Id = Guid.NewGuid(),
+                                Id = newId,
                                 Email = email.ToLowerInvariant(),
                                 PasswordHash = "",
                                 FullName = fullName,
+                                Role = roleForDb,
                                 CreatedAt = DateTime.UtcNow
                             };
                             await _userRepository.CreateAsync(newUser);
-                        }
-                        else if (string.IsNullOrEmpty(existing.FullName) && !string.IsNullOrEmpty(fullName))
-                        {
-                            // Update name from Google profile
-                            existing.FullName = fullName;
-                            await _userRepository.UpdateAsync(existing);
+                            dbUser = newUser;
                         }
                     }
                     catch { /* Non-critical — user is already authenticated via Supabase */ }
                 }
 
-                // Generate a backend JWT so the API stays authenticated
-                var backendToken = GenerateJwtFromSupabaseUser(supabaseUser.Id!, email, fullName);
+                appUserId = dbUser?.Id
+                    ?? (Guid.TryParse(supabaseUser.Id, out var fallbackId) ? fallbackId : Guid.NewGuid());
+                var displayName = string.IsNullOrWhiteSpace(fullName) ? (dbUser?.FullName ?? "") : fullName;
+                var role = DetermineRole(email);
+
+                var backendToken = GenerateJwtForAppUser(appUserId, email, displayName, role);
                 return Ok(new AuthResponseDto(
                     Token: backendToken,
-                    User: new UserDto(
-                        Guid.TryParse(supabaseUser.Id, out var uid) ? uid : Guid.NewGuid(),
-                        email,
-                        fullName
-                    )
+                    User: new UserDto(appUserId, email, displayName, role)
                 ));
             }
 
@@ -383,7 +412,7 @@ public class AuthController : ControllerBase
         }
     }
 
-    private string GenerateJwtFromSupabaseUser(string supabaseId, string email, string fullName)
+    private string GenerateJwtForAppUser(Guid userId, string email, string fullName, string role = "User")
     {
         var jwtSecret = _config["JWT_SECRET_KEY"] ?? "VeloFinAI-SuperSecretKey-32chars-min!";
         var expiryDays = int.Parse(_config["JWT_EXPIRY_DAYS"] ?? "7");
@@ -395,10 +424,11 @@ public class AuthController : ControllerBase
 
         var claims = new[]
         {
-            new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.NameIdentifier, supabaseId),
+            new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.NameIdentifier, userId.ToString()),
             new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.Email, email),
             new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.Name, fullName),
-            new System.Security.Claims.Claim("provider", "google"),
+            new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.Role, role),
+            new System.Security.Claims.Claim("provider", "supabase"),
         };
 
         var token = new System.IdentityModel.Tokens.Jwt.JwtSecurityToken(
@@ -411,6 +441,36 @@ public class AuthController : ControllerBase
     }
 
     // ── Helpers ──────────────────────────────────────────────────
+
+    private async Task LogSecurityAuditAsync(string kind, string? email, Guid? userId)
+    {
+        try
+        {
+            var normalized = string.IsNullOrWhiteSpace(email) ? null : email.ToLowerInvariant().Trim();
+            _db.SecurityAuditEvents.Add(new SecurityAuditEvent
+            {
+                Kind = kind,
+                NormalizedEmail = normalized,
+                UserId = userId,
+                OccurredAtUtc = DateTime.UtcNow
+            });
+            await _db.SaveChangesAsync();
+        }
+        catch
+        {
+            // Do not fail authentication if audit storage is unavailable
+        }
+    }
+
+    private string DetermineRole(string email)
+    {
+        var adminEmails = (_config["ADMIN_EMAIL"] ?? "")
+            .Split(',', StringSplitOptions.RemoveEmptyEntries)
+            .Select(e => e.Trim().ToLowerInvariant())
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        return adminEmails.Contains(email.Trim().ToLowerInvariant()) ? "Admin" : "User";
+    }
 
     private string GenerateJwt(FinAI.Core.Entities.User user)
     {
@@ -430,6 +490,8 @@ public class AuthController : ControllerBase
                 System.Security.Claims.ClaimTypes.Email, user.Email),
             new System.Security.Claims.Claim(
                 System.Security.Claims.ClaimTypes.Name, user.FullName),
+            new System.Security.Claims.Claim(
+                System.Security.Claims.ClaimTypes.Role, user.Role),
         };
 
         var token = new System.IdentityModel.Tokens.Jwt.JwtSecurityToken(

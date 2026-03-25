@@ -49,7 +49,7 @@ interface StockPriceClient {
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
-/** True when env points at the usual local Kestrel URL — browser should use /bff proxy. */
+/** True when env points at the usual local Kestrel URL — browser should use direct backend URL. */
 function isLocalLoopbackApiUrl(url: string): boolean {
   try {
     const u = new URL(url);
@@ -85,9 +85,9 @@ function getHubUrl(): string {
     return `${apiUrl}/hubs/stock-price`;
   }
 
-  // Browser: call backend directly (CORS-enabled)
+  // Browser: use same-origin /hubs/* which next.config.ts rewrites to backend
   if (typeof window !== "undefined") {
-    return "http://127.0.0.1:5001/hubs/stock-price";
+    return "/hubs/stock-price";
   }
 
   // Server: call backend directly

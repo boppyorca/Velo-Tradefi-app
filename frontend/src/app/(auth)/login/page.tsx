@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { supabase, signIn } from "@/lib/supabase";
 import { setVeloTokenCookie, syncAuthCookiesToServer } from "@/lib/auth-cookies";
+import { syncBackendAuthFromSupabaseSession } from "@/lib/sync-backend-auth";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -35,15 +36,28 @@ export default function LoginPage() {
       const { data: { session } } = await supabase.auth.getSession();
 
       if (session) {
-        localStorage.setItem("velo_token", session.access_token);
-        setVeloTokenCookie(session.access_token);
         try {
-          await syncAuthCookiesToServer(session.access_token, session.refresh_token ?? "");
-        } catch (e) {
-          console.warn("Cookie sync failed (session still valid):", e);
+          const { user } = await syncBackendAuthFromSupabaseSession(session);
+          const qp = new URLSearchParams(window.location.search).get("redirect");
+          const redirectTo =
+            qp || (user.role === "Admin" ? "/admin" : "/dashboard");
+          router.push(redirectTo);
+        } catch (syncErr) {
+          console.warn("Backend auth sync failed:", syncErr);
+          localStorage.setItem("velo_token", session.access_token);
+          setVeloTokenCookie(session.access_token);
+          try {
+            await syncAuthCookiesToServer(
+              session.access_token,
+              session.refresh_token ?? ""
+            );
+          } catch (e) {
+            console.warn("Cookie sync failed (session still valid):", e);
+          }
+          setError(
+            "Không đồng bộ được với API — kiểm tra backend đang chạy (Docker: cổng 5050) và thử lại."
+          );
         }
-        const redirectTo = new URLSearchParams(window.location.search).get("redirect") || "/dashboard";
-        window.location.href = redirectTo;
       } else {
         setError("Login failed. Please try again.");
       }

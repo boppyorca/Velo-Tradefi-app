@@ -27,7 +27,12 @@ COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV NODE_ENV=production
 
-# Build the application
+# Server-side rewrites: proxy /api/* → .NET API inside Docker network.
+# Leave NEXT_PUBLIC_API_URL empty so the browser uses same-origin /api (rewrites).
+ARG BACKEND_INTERNAL_URL=http://backend:8080
+ENV BACKEND_INTERNAL_URL=$BACKEND_INTERNAL_URL
+ENV NEXT_PUBLIC_API_URL=
+
 RUN npm run build
 
 # ── Stage 3: Runner ───────────────────────────────────────────────────────────
@@ -46,11 +51,9 @@ RUN addgroup --system --gid 1001 nodejs
 RUN adduser --system --uid 1001 nextjs
 
 # Copy necessary files from builder
+COPY --from=builder /app/.next/standalone ./
+COPY --from=builder /app/.next/static .next/static
 COPY --from=builder /app/public ./public
-
-# Set permissions for prerender cache
-RUN mkdir .next
-RUN chown -R nextjs:nodejs .next
 
 # Switch to non-root user
 USER nextjs
