@@ -1,4 +1,4 @@
-namespace FinAI.Infrastructure.Services;
+namespace FinAI.Api.Services;
 
 using System.Text.Json;
 using FinAI.Api.Hubs;

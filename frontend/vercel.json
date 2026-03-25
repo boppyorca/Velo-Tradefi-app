@@ -7,9 +7,5 @@
   "env": {
     "NEXT_TELEMETRY_DISABLED": "1",
     "NODE_ENV": "production"
-  },
-  "publicEnv": {
-    "NEXT_PUBLIC_API_URL": "@next-public-api-url",
-    "NEXT_PUBLIC_WS_URL": "@next-public-ws-url"
   }
 }

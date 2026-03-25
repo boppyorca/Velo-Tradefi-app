@@ -113,7 +113,7 @@ public class AppDbContext : DbContext
             entity.Property(e => e.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("now()");
             entity.Property(e => e.UpdatedAt).HasColumnName("updated_at");
             entity.HasOne(e => e.User)
-                  .WithMany()
+                  .WithMany(u => u.PriceAlerts)
                   .HasForeignKey(e => e.UserId)
                   .OnDelete(DeleteBehavior.Cascade);
             entity.HasIndex(e => e.UserId);

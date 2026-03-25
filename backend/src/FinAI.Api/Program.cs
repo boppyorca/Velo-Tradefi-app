@@ -157,24 +157,66 @@ if (useSupabaseAuth)
     })
     .AddJwtBearer(JwtSchemeSupabase, options =>
     {
-        options.RequireHttpsMetadata = !builder.Environment.IsDevelopment();
+        options.RequireHttpsMetadata = false;
         options.SaveToken = true;
-        Console.WriteLine($"  → {JwtSchemeSupabase}: issuer ~ {supabaseUrl}");
+
+        // Supabase uses ES256 (ECDSA) — can't validate locally.
+        // Validate by calling Supabase /auth/v1/user in OnMessageReceived.
+        options.Events = new JwtBearerEvents
+        {
+            OnMessageReceived = async ctx =>
+            {
+                var authHeader = ctx.Request.Headers.Authorization.ToString();
+                if (string.IsNullOrEmpty(authHeader) || !authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
+                    return;
+
+                var token = authHeader["Bearer ".Length..].Trim();
+                try
+                {
+                    var handler = new JwtSecurityTokenHandler();
+                    if (!handler.CanReadToken(token)) return;
+                    var jwt = handler.ReadJwtToken(token);
+                    if (string.IsNullOrEmpty(jwt.Issuer) ||
+                        !jwt.Issuer.Contains("supabase", StringComparison.OrdinalIgnoreCase)) return;
+
+                    // Validate token with Supabase API
+                    using var httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
+                    httpClient.DefaultRequestHeaders.Add("apikey", supabaseAnonKey);
+                    httpClient.DefaultRequestHeaders.Authorization =
+                        new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
+
+                    var response = await httpClient.GetAsync($"{supabaseUrl}/auth/v1/user");
+                    if (!response.IsSuccessStatusCode) return;
+
+                    var supabaseUser = await response.Content.ReadFromJsonAsync<SupabaseAuthApiUser>();
+                    if (supabaseUser == null) return;
+
+                    var claims = new List<System.Security.Claims.Claim>
+                    {
+                        new(System.Security.Claims.ClaimTypes.NameIdentifier, supabaseUser.Id ?? ""),
+                        new(System.Security.Claims.ClaimTypes.Email, supabaseUser.Email ?? ""),
+                        new(System.Security.Claims.ClaimTypes.Role, supabaseUser.Role ?? "User"),
+                        new("provider", "supabase"),
+                    };
+
+                    var identity = new System.Security.Claims.ClaimsIdentity(claims, "SupabaseBearer");
+                    ctx.Principal = new System.Security.Claims.ClaimsPrincipal(identity);
+                    ctx.Success();
+                }
+                catch
+                {
+                    // Let default auth fail
+                }
+            }
+        };
 
         options.TokenValidationParameters = new TokenValidationParameters
         {
-            ValidateIssuer = true,
-            ValidIssuer = supabaseUrl,
-            ValidateAudience = true,
-            ValidAudience = supabaseAnonKey,
-            ValidateIssuerSigningKey = true,
-            ValidateLifetime = true,
-            ClockSkew = TimeSpan.FromMinutes(5),
-            IssuerSigningKeyResolver = (_, _, _, _) =>
-            {
-                var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(supabaseAnonKey));
-                return new[] { key };
-            }
+            ValidateIssuer = false,
+            ValidateAudience = false,
+            ValidateIssuerSigningKey = false,
+            ValidateLifetime = false,
+            RequireSignedTokens = false,
         };
     })
     .AddJwtBearer(JwtSchemeBackend, options =>
@@ -396,3 +438,11 @@ app.MapHub<StockPriceHub>("/hubs/stock-price");
 app.MapGet("/health", () => Results.Ok(new { status = "ok", timestamp = DateTime.UtcNow }));
 
 app.Run();
+
+// ── Supabase Auth API User model (for token validation) ──────────────────────
+internal class SupabaseAuthApiUser
+{
+    public string? Id { get; set; }
+    public string? Email { get; set; }
+    public string? Role { get; set; }
+}

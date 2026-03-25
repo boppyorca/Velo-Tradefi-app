@@ -73,16 +73,20 @@ public class AuthController : ControllerBase
                 if (signupResponse.IsSuccessStatusCode)
                 {
                     var result = await signupResponse.Content.ReadFromJsonAsync<SupabaseAuthResponse>();
-                    var fullName = result?.User?.UserMetadata != null &&
+                    if (result?.User == null || string.IsNullOrEmpty(result.User.Email))
+                    {
+                        return StatusCode(500, new { success = false, message = "Supabase error", error = "Empty user in auth response" });
+                    }
+                    var fullName = result.User.UserMetadata != null &&
                                    result.User.UserMetadata.TryGetValue("full_name", out var fn)
                         ? fn.GetString()
                         : "";
-                    var role = DetermineRole(result.User.Email!);
+                    var role = DetermineRole(result.User.Email);
                     return Ok(new AuthResponseDto(
-                        Token: result!.Session!.AccessToken,
+                        Token: result.AccessToken ?? result.Session?.AccessToken ?? "",
                         User: new UserDto(
-                            Guid.Parse(result.User!.Id!),
-                            result.User.Email!,
+                            Guid.TryParse(result.User.Id, out var uid) ? uid : Guid.NewGuid(),
+                            result.User.Email,
                             fullName ?? "",
                             role
                         )
@@ -160,20 +164,24 @@ public class AuthController : ControllerBase
                 if (loginResponse.IsSuccessStatusCode)
                 {
                     var result = await loginResponse.Content.ReadFromJsonAsync<SupabaseAuthResponse>();
-                    var fullName = result?.User?.UserMetadata != null &&
+                    if (result?.User == null || string.IsNullOrEmpty(result.User.Email))
+                    {
+                        return StatusCode(500, new { success = false, message = "Supabase error", error = "Empty user in auth response" });
+                    }
+                    var fullName = result.User.UserMetadata != null &&
                                    result.User.UserMetadata.TryGetValue("full_name", out var fn)
                         ? fn.GetString()
                         : "";
-                    var role = DetermineRole(result.User.Email!);
+                    var role = DetermineRole(result.User.Email);
                     await LogSecurityAuditAsync(
                         "login_ok",
-                        result.User!.Email,
+                        result.User.Email,
                         Guid.TryParse(result.User.Id, out var sid) ? sid : null);
                     return Ok(new AuthResponseDto(
-                        Token: result!.Session!.AccessToken,
+                        Token: result.AccessToken ?? result.Session?.AccessToken ?? "",
                         User: new UserDto(
-                            Guid.Parse(result.User!.Id!),
-                            result.User.Email!,
+                            Guid.TryParse(result.User.Id, out var uid) ? uid : Guid.NewGuid(),
+                            result.User.Email,
                             fullName ?? "",
                             role
                         )
@@ -508,6 +516,12 @@ public class AuthController : ControllerBase
 
 internal class SupabaseAuthResponse
 {
+    [System.Text.Json.Serialization.JsonPropertyName("access_token")]
+    public string? AccessToken { get; set; }
+    [System.Text.Json.Serialization.JsonPropertyName("refresh_token")]
+    public string? RefreshToken { get; set; }
+    [System.Text.Json.Serialization.JsonPropertyName("expires_in")]
+    public int ExpiresIn { get; set; }
     public SupabaseUser? User { get; set; }
     public SupabaseSession? Session { get; set; }
 }
@@ -516,11 +530,13 @@ internal class SupabaseUser
 {
     public string? Id { get; set; }
     public string? Email { get; set; }
-    public Dictionary<string, JsonElement>? UserMetadata { get; set; }
+    [System.Text.Json.Serialization.JsonPropertyName("user_metadata")]
+    public Dictionary<string, System.Text.Json.JsonElement>? UserMetadata { get; set; }
 }
 
 internal class SupabaseSession
 {
+    [System.Text.Json.Serialization.JsonPropertyName("access_token")]
     public string? AccessToken { get; set; }
     public string? RefreshToken { get; set; }
     public int ExpiresIn { get; set; }
