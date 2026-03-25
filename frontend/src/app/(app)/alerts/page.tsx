@@ -2,7 +2,7 @@
 
 import { useState, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Plus, RefreshCw, Bell, History } from "lucide-react";
+import { Plus, RefreshCw, Bell, History, Volume2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -129,6 +129,22 @@ export default function AlertsPage() {
   const activeAlerts = alerts.filter((a) => a.isActive);
   const pausedAlerts = alerts.filter((a) => !a.isActive);
 
+  // ── Test notification (mock) ───────────────────────────────────────────────
+  const handleTestNotification = useCallback(() => {
+    const mock = {
+      alertId: "mock-alert-001",
+      alertName: "NVDA Test Alert",
+      symbol: "NVDA",
+      currentPrice: 135.42,
+      basePrice: 130.0,
+      triggeredCondition: "price_above",
+      triggeredValue: 135,
+      triggeredAt: new Date().toISOString(),
+    };
+    // Dispatch custom DOM event — AppLayout picks it up and plays sound + shows toast
+    window.dispatchEvent(new CustomEvent("velo:alert:notification", { detail: mock }));
+  }, []);
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -147,6 +163,15 @@ export default function AlertsPage() {
             className="h-8"
           >
             <RefreshCw className="w-3.5 h-3.5" />
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={handleTestNotification}
+            className="h-8 border-[#F59E0B]/40 text-[#F59E0B] hover:bg-[#F59E0B]/10"
+            title="Test notification sound"
+          >
+            <Volume2 className="w-3.5 h-3.5" />
           </Button>
           <Button
             size="sm"
