@@ -1,18 +1,19 @@
 import type { NextConfig } from "next";
 
 /**
- * Backend API URL for BFF proxy.
- * Priority: NEXT_PUBLIC_API_URL > http://127.0.0.1:5001
+ * Backend URL for Next.js rewrites only (server-side). The browser should call
+ * same-origin `/api/*` so this must be reachable from the Node process:
+ * - Docker frontend container: http://backend:8080
+ * - Local next dev + backend on host: http://127.0.0.1:5050
  *
- * Routing strategy:
- * - Frontend calls /api/* (relative paths)
- * - next.config.ts rewrites /api/* → backend:5001 in dev, Railway in prod
- * - This avoids CORS issues and works seamlessly in Vercel preview deployments
+ * Do not use NEXT_PUBLIC_API_URL here first — that would duplicate the same
+ * value for client bundles and break when it points at `backend` (unresolvable
+ * in the browser) or wrong host ports.
  */
 const backendUrl =
-  process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "") ||
   process.env.BACKEND_INTERNAL_URL?.replace(/\/$/, "") ||
-  "http://127.0.0.1:5001";
+  process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "") ||
+  "http://127.0.0.1:5050";
 
 const nextConfig: NextConfig = {
   output: "standalone",

@@ -93,7 +93,8 @@ public record AuthResponseDto(
 public record UserDto(
     Guid Id,
     string Email,
-    string FullName
+    string FullName,
+    string Role = "User"
 );
 
 public record RegisterRequest(

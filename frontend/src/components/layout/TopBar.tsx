@@ -11,11 +11,14 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useAuthStore } from "@/lib/auth-store";
 import { useAuth } from "@/lib/useAuth";
+import { useHasVeloSession } from "@/lib/use-velo-session";
+import { cn } from "@/lib/utils";
 
 export function TopBar() {
   const router = useRouter();
   const { user } = useAuthStore();
   const { logout } = useAuth();
+  const hasSession = useHasVeloSession();
 
   const displayName =
     user?.fullName?.trim() || user?.email?.split("@")[0] || "User";
@@ -61,9 +64,9 @@ export function TopBar() {
           <Wallet className="w-[18px] h-[18px] text-[#8A8A9A]" />
         </button>
 
-        {/* PRO TRADER badge */}
+        {/* User role badge */}
         <span className="bg-[#A3E635]/[0.12] text-[#A3E635] text-[10px] font-bold tracking-wider px-2.5 py-1 rounded-full">
-          PRO TRADER
+          {user?.role?.toUpperCase() || "TRADER"}
         </span>
 
         {/* User */}
@@ -73,9 +76,19 @@ export function TopBar() {
               <p className="text-[12px] text-[#F0F0F0] font-medium leading-tight truncate max-w-[120px]">
                 {displayName}
               </p>
-              <p className="text-[10px] text-[#A3E635]">
-                <span className="w-1.5 h-1.5 bg-[#A3E635] rounded-full inline-block mr-1" />
-                CONNECTED
+              <p
+                className={cn(
+                  "text-[10px]",
+                  hasSession ? "text-[#A3E635]" : "text-[#4A4A5A]"
+                )}
+              >
+                <span
+                  className={cn(
+                    "w-1.5 h-1.5 rounded-full inline-block mr-1",
+                    hasSession ? "bg-[#A3E635]" : "bg-[#4A4A5A]"
+                  )}
+                />
+                {hasSession ? "CONNECTED" : "NO SESSION"}
               </p>
             </div>
             <div className="w-8 h-8 rounded-full bg-[#1E1E26] border border-white/[0.10] flex items-center justify-center">

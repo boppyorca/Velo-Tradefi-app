@@ -1,9 +1,12 @@
 "use client";
 
+import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { Star, TrendingUp, TrendingDown, Loader2 } from "lucide-react";
 import { watchlistApi } from "@/lib/api-client";
+import { useHasVeloSession } from "@/lib/use-velo-session";
+import { resyncBackendJwtFromSupabase } from "@/lib/resync-backend-jwt";
 import { cn } from "@/lib/utils";
 import type { WatchlistItem } from "@/lib/types";
 
@@ -27,10 +30,14 @@ interface WatchlistSectionProps {
 export function WatchlistSection({ onSymbolClick }: WatchlistSectionProps) {
   const router = useRouter();
   const queryClient = useQueryClient();
+  const hasSession = useHasVeloSession();
+  const [resyncing, setResyncing] = useState(false);
+  const [syncErr, setSyncErr] = useState<string | null>(null);
 
   const { data: items, isLoading, error } = useQuery({
     queryKey: ["watchlist"],
     queryFn: watchlistApi.list,
+    enabled: hasSession,
     retry: 1,
   });
 
@@ -56,6 +63,28 @@ export function WatchlistSection({ onSymbolClick }: WatchlistSectionProps) {
     );
   }
 
+  if (!hasSession) {
+    return (
+      <div className="bg-[#141418] border border-white/[0.07] rounded-xl p-5">
+        <div className="flex items-center gap-2 mb-4">
+          <Star className="w-4 h-4 text-[#F59E0B]" />
+          <h2 className="text-sm font-medium text-[#F0F0F0]">My Watchlist</h2>
+        </div>
+        <div className="py-6 text-center">
+          <Star className="w-6 h-6 text-[#4A4A5A] mx-auto mb-2" />
+          <p className="text-xs text-[#4A4A5A]">Đăng nhập để lưu mã vào watchlist</p>
+          <button
+            type="button"
+            onClick={() => router.push("/login?redirect=/markets")}
+            className="mt-3 text-[11px] font-semibold text-[#A3E635] hover:underline"
+          >
+            Đăng nhập
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   if (error || !items || items.length === 0) {
     return (
       <div className="bg-[#141418] border border-white/[0.07] rounded-xl p-5">
@@ -66,11 +95,34 @@ export function WatchlistSection({ onSymbolClick }: WatchlistSectionProps) {
         <div className="py-6 text-center">
           <Star className="w-6 h-6 text-[#4A4A5A] mx-auto mb-2" />
           <p className="text-xs text-[#4A4A5A]">
-            {error ? "Failed to load watchlist" : "No stocks watched yet"}
+            {error ? "Không tải được watchlist — đăng xuất và đăng nhập lại" : "Chưa có mã nào trong watchlist"}
           </p>
           <p className="text-[10px] text-[#4A4A5A] mt-1">
-            Click the star icon on any stock to add it here
+            Bấm dấu sao cạnh mã để thêm (lưu theo tài khoản của bạn)
           </p>
+          {error && (
+            <button
+              type="button"
+              disabled={resyncing}
+              className="mt-4 text-[11px] font-semibold px-3 py-2 rounded-lg bg-[#1E1E26] text-[#A3E635] border border-[#A3E635]/30 hover:bg-[#A3E635]/10 disabled:opacity-50"
+              onClick={async () => {
+                setSyncErr(null);
+                setResyncing(true);
+                const r = await resyncBackendJwtFromSupabase();
+                setResyncing(false);
+                if (r.ok) {
+                  await queryClient.invalidateQueries({ queryKey: ["watchlist"] });
+                } else {
+                  setSyncErr(r.message);
+                }
+              }}
+            >
+              {resyncing ? "Đang đồng bộ…" : "Đồng bộ JWT (Supabase → backend)"}
+            </button>
+          )}
+          {syncErr && (
+            <p className="mt-2 text-[10px] text-[#F05252] text-center px-2">{syncErr}</p>
+          )}
         </div>
       </div>
     );

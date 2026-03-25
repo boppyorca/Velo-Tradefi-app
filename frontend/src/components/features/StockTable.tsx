@@ -5,12 +5,17 @@ import { Search, Star } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { Stock } from "@/lib/types";
 
+function watchlistMarketForExchange(exchange: Stock["exchange"]): "VN" | "US" {
+  return exchange === "HOSE" || exchange === "HNX" ? "VN" : "US";
+}
+
 interface StockTableProps {
   stocks: Stock[];
   loading?: boolean;
   error?: Error;
-  watchedSymbols: Set<string>;
-  onToggleWatchlist: (symbol: string) => void;
+  /** Keys like `AAPL:US` or `VNM:VN` */
+  watchedKeys?: Set<string>;
+  onToggleWatchlist: (symbol: string, exchange: Stock["exchange"]) => void;
   onSymbolClick: (symbol: string) => void;
 }
 
@@ -40,7 +45,7 @@ function formatVolume(volume: number) {
 export function StockTable({
   stocks,
   loading,
-  watchedSymbols,
+  watchedKeys = new Set(),
   onToggleWatchlist,
   onSymbolClick,
 }: StockTableProps) {
@@ -120,24 +125,45 @@ export function StockTable({
           filtered.map((stock) => {
             const isUp = stock.change >= 0;
             const changeColor = isUp ? "text-[#A3E635]" : "text-[#F05252]";
-            const isWatched = watchedSymbols.has(stock.symbol);
+            const wlMarket = watchlistMarketForExchange(stock.exchange);
+            const isWatched = watchedKeys.has(`${stock.symbol}:${wlMarket}`);
             const marketStyle = MARKET_COLORS[stock.exchange] ?? "bg-[#1E1E26] text-[#8A8A9A]";
 
             return (
               <div
                 key={stock.symbol}
-                className="grid items-center px-4 py-3.5 border-b border-white/[0.04] hover:bg-white/[0.02] transition-colors cursor-pointer"
+                className={cn(
+                  "grid items-center px-4 py-3.5 border-b border-white/[0.04] transition-colors cursor-pointer",
+                  isWatched
+                    ? "bg-[#F59E0B]/[0.06] hover:bg-[#F59E0B]/[0.09]"
+                    : "hover:bg-white/[0.02]"
+                )}
                 style={{ gridTemplateColumns: "40px 1fr 120px 100px 100px 100px 120px" }}
                 onClick={() => onSymbolClick(stock.symbol)}
               >
                 {/* Star */}
                 <div className="flex items-center justify-center">
                   <button
-                    onClick={(e) => { e.stopPropagation(); onToggleWatchlist(stock.symbol); }}
-                    className="p-1 rounded hover:bg-white/[0.05] transition-colors"
+                    type="button"
+                    aria-label={isWatched ? "Remove from watchlist" : "Add to watchlist"}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onToggleWatchlist(stock.symbol, stock.exchange);
+                    }}
+                    className={cn(
+                      "p-1.5 rounded-lg transition-all duration-200",
+                      isWatched
+                        ? "bg-[#F59E0B]/20 ring-1 ring-[#F59E0B]/55 shadow-[0_0_14px_rgba(245,158,11,0.18)]"
+                        : "hover:bg-white/[0.06] ring-1 ring-transparent"
+                    )}
                   >
                     <Star
-                      className={cn("w-[15px] h-[15px]", isWatched ? "fill-[#F59E0B] text-[#F59E0B]" : "text-[#4A4A5A]")}
+                      className={cn(
+                        "w-[15px] h-[15px] transition-all duration-200",
+                        isWatched
+                          ? "fill-[#F59E0B] text-[#F59E0B] drop-shadow-[0_0_6px_rgba(245,158,11,0.45)]"
+                          : "text-[#4A4A5A]"
+                      )}
                     />
                   </button>
                 </div>

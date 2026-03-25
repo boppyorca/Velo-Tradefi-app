@@ -33,20 +33,28 @@ export function useAuth() {
         id: supabaseUser?.id || "",
         email: supabaseUser?.email || email,
         fullName,
+        role: "User",
         createdAt: supabaseUser?.created_at || new Date().toISOString(),
       };
 
-      setAuth(authUser, accessToken);
-
-      // Also sync with backend (optional, for storing user in your DB)
+      // Sync with backend and get role
       try {
-        await authApi.login({ email, password });
+        const backendRes = await authApi.login({ email, password });
+        const backendUser: User = {
+          id: backendRes.user.id,
+          email: backendRes.user.email,
+          fullName: backendRes.user.fullName,
+          role: backendRes.user.role,
+          createdAt: new Date().toISOString(),
+        };
+        setAuth(backendUser, backendRes.token);
+        router.push(backendUser.role === "Admin" ? "/admin" : "/dashboard");
+        return;
       } catch {
-        // Backend sync failed, but Supabase auth succeeded
-        console.warn("Backend sync failed, continuing with Supabase auth only");
+        // Backend sync failed, but Supabase auth succeeded — fallback to Supabase role
+        setAuth(authUser, accessToken);
+        router.push("/dashboard");
       }
-
-      router.push("/dashboard");
     },
     [setAuth, router]
   );
@@ -67,6 +75,7 @@ export function useAuth() {
         id: data.user?.id || "",
         email: data.user?.email || email,
         fullName,
+        role: "User",
         createdAt: data.user?.created_at || new Date().toISOString(),
       };
 
@@ -122,7 +131,10 @@ export function useAuth() {
         // We have a token but no local state, try to restore
         try {
           const me = await authApi.me(accessToken);
-          setAuth(me, accessToken);
+          setAuth(
+            { id: me.id, email: me.email, fullName: me.fullName, role: me.role },
+            accessToken
+          );
         } catch {
           // Token invalid, clear
           clearAuth();

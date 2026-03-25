@@ -2,7 +2,8 @@
 
 import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { setVeloTokenCookie, syncAuthCookiesToServer } from "@/lib/auth-cookies";
+import { setVeloTokenCookie } from "@/lib/auth-cookies";
+import { syncBackendAuthFromSupabaseSession } from "@/lib/sync-backend-auth";
 
 /**
  * Exchange Supabase session token for a backend JWT, then set auth cookies and redirect.
@@ -19,29 +20,13 @@ async function exchangeAndRedirect(session: {
   setVeloTokenCookie(accessToken);
 
   try {
-    // Exchange Supabase token for backend JWT (this also upserts the user in DB)
-    const { authApi } = await import("@/lib/api-client");
-    const result = await authApi.exchangeGoogleToken(accessToken);
-
-    // Store the backend JWT instead of Supabase token for API calls
-    localStorage.setItem("velo_token", result.token);
-    setVeloTokenCookie(result.token);
-
-    // Set httpOnly cookies via server route
-    await syncAuthCookiesToServer(result.token, session.refresh_token ?? "");
-
-    // Update Zustand store with user data
-    try {
-      const { useAuthStore } = await import("@/lib/auth-store");
-      useAuthStore.getState().setAuth(result.user, result.token);
-    } catch { /* store may not be initialized */ }
-
+    const { user } = await syncBackendAuthFromSupabaseSession(session);
     console.log("Auth synced to backend");
+    window.location.replace(user.role === "Admin" ? "/admin" : "/dashboard");
   } catch (err) {
     console.warn("Backend token exchange failed (continuing with Supabase token):", err);
+    window.location.replace("/dashboard");
   }
-
-  window.location.href = "/dashboard";
 }
 
 /**

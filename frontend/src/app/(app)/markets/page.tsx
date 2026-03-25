@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { StockTable, WatchlistSection } from "@/components/features";
@@ -9,12 +9,53 @@ import { RefreshCw } from "lucide-react";
 import { stockApi, watchlistApi } from "@/lib/api-client";
 import { useAuthStore } from "@/lib/auth-store";
 import { useStockSignalR, LiveBadge } from "@/lib/useStockSignalR";
-import type { Stock } from "@/lib/types";
+import { useHasVeloSession } from "@/lib/use-velo-session";
+import { resyncBackendJwtFromSupabase } from "@/lib/resync-backend-jwt";
+import type { Stock, WatchlistItem } from "@/lib/types";
+
+function watchlistMarket(exchange: Stock["exchange"]): "VN" | "US" {
+  return exchange === "HOSE" || exchange === "HNX" ? "VN" : "US";
+}
 
 export default function MarketsPage() {
   const router = useRouter();
   const queryClient = useQueryClient();
-  const { isAuthenticated } = useAuthStore();
+  const hasSession = useHasVeloSession();
+  const [watchlistActionError, setWatchlistActionError] = useState<string | null>(null);
+  const [resyncingJwt, setResyncingJwt] = useState(false);
+
+  // Tự đồng bộ Supabase → JWT backend khi vào Markets (để My Watchlist bên phải gọi được API).
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const { supabase } = await import("@/lib/supabase");
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      if (!session || cancelled) return;
+      const result = await resyncBackendJwtFromSupabase();
+      if (cancelled) return;
+      if (result.ok) {
+        setWatchlistActionError(null);
+        await queryClient.invalidateQueries({ queryKey: ["watchlist"] });
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [queryClient]);
+
+  async function handleResyncBackendJwt() {
+    setResyncingJwt(true);
+    setWatchlistActionError(null);
+    const result = await resyncBackendJwtFromSupabase();
+    if (result.ok) {
+      await queryClient.invalidateQueries({ queryKey: ["watchlist"] });
+    } else {
+      setWatchlistActionError(result.message);
+    }
+    setResyncingJwt(false);
+  }
 
   // ── SignalR real-time connection ──────────────────────────────────────────
   const { connectionStatus } = useStockSignalR({});
@@ -34,35 +75,99 @@ export default function MarketsPage() {
   const { data: watchlistItems } = useQuery({
     queryKey: ["watchlist"],
     queryFn: watchlistApi.list,
-    enabled: isAuthenticated,
+    enabled: hasSession,
     retry: 1,
   });
 
-  const watchedSymbols = new Set((watchlistItems ?? []).map((w) => w.symbol));
+  const watchedKeys = useMemo(
+    () =>
+      new Set((watchlistItems ?? []).map((w) => `${w.symbol}:${w.market}`)),
+    [watchlistItems]
+  );
 
   const addMutation = useMutation({
-    mutationFn: (symbol: string) => watchlistApi.add(symbol),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["watchlist"] }),
+    mutationFn: ({ symbol, market }: { symbol: string; market: string }) =>
+      watchlistApi.add(symbol, market),
+    onMutate: async ({ symbol, market }) => {
+      setWatchlistActionError(null);
+      await queryClient.cancelQueries({ queryKey: ["watchlist"] });
+      const previous = queryClient.getQueryData<WatchlistItem[]>(["watchlist"]);
+      const list = previous ?? [];
+      const optimistic: WatchlistItem = {
+        id: `optimistic-${symbol}-${market}`,
+        symbol,
+        market: market === "VN" ? "VN" : "US",
+        addedAt: new Date().toISOString(),
+        price: 0,
+        changePercent: 0,
+        name: symbol,
+      };
+      queryClient.setQueryData<WatchlistItem[]>(["watchlist"], [...list, optimistic]);
+      return { previous };
+    },
+    onError: (err, _vars, ctx) => {
+      if (ctx?.previous !== undefined) {
+        queryClient.setQueryData(["watchlist"], ctx.previous);
+      } else {
+        queryClient.removeQueries({ queryKey: ["watchlist"] });
+      }
+      const msg = err instanceof Error ? err.message : String(err);
+      setWatchlistActionError(
+        /401|unauthorized/i.test(msg)
+          ? "Token API không hợp lệ — hãy Đăng xuất rồi Đăng nhập lại (để đồng bộ JWT backend)."
+          : msg
+      );
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ["watchlist"] });
+    },
   });
 
   const removeMutation = useMutation({
-    mutationFn: (symbol: string) => watchlistApi.remove(symbol),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["watchlist"] }),
+    mutationFn: ({ symbol, market }: { symbol: string; market: string }) =>
+      watchlistApi.remove(symbol, market),
+    onMutate: async ({ symbol, market }) => {
+      setWatchlistActionError(null);
+      await queryClient.cancelQueries({ queryKey: ["watchlist"] });
+      const previous = queryClient.getQueryData<WatchlistItem[]>(["watchlist"]);
+      if (!previous?.length) return {};
+      queryClient.setQueryData<WatchlistItem[]>(
+        ["watchlist"],
+        previous.filter((w) => !(w.symbol === symbol && w.market === market))
+      );
+      return { previous };
+    },
+    onError: (err, _vars, ctx) => {
+      if (ctx?.previous !== undefined) {
+        queryClient.setQueryData(["watchlist"], ctx.previous);
+      }
+      const msg = err instanceof Error ? err.message : String(err);
+      setWatchlistActionError(
+        /401|unauthorized/i.test(msg)
+          ? "Token API không hợp lệ — hãy Đăng xuất rồi Đăng nhập lại."
+          : msg
+      );
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ["watchlist"] });
+    },
   });
 
   const handleToggleWatchlist = useCallback(
-    (symbol: string) => {
-      if (!isAuthenticated) {
-        router.push("/login");
+    (symbol: string, exchange: Stock["exchange"]) => {
+      if (!hasSession) {
+        router.push("/login?redirect=/markets");
         return;
       }
-      if (watchedSymbols.has(symbol)) {
-        removeMutation.mutate(symbol);
+      const market = watchlistMarket(exchange);
+      const key = `${symbol}:${market}`;
+      if (watchedKeys.has(key)) {
+        removeMutation.mutate({ symbol, market });
       } else {
-        addMutation.mutate(symbol);
+        addMutation.mutate({ symbol, market });
       }
     },
-    [isAuthenticated, router, watchedSymbols, addMutation, removeMutation]
+    [hasSession, router, watchedKeys, addMutation, removeMutation]
   );
 
   return (
@@ -92,6 +197,29 @@ export default function MarketsPage() {
         </div>
       )}
 
+      {watchlistActionError && (
+        <div className="mb-4 p-4 rounded-xl bg-[#F05252]/10 border border-[#F05252]/20 text-sm text-[#F05252] flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <span className="min-w-0">{watchlistActionError}</span>
+          <div className="flex flex-wrap gap-2 shrink-0">
+            <button
+              type="button"
+              disabled={resyncingJwt}
+              className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-[#1E1E26] text-[#F0F0F0] border border-white/[0.12] hover:border-[#A3E635]/40 disabled:opacity-50"
+              onClick={() => void handleResyncBackendJwt()}
+            >
+              {resyncingJwt ? "Đang đồng bộ…" : "Đồng bộ JWT (Supabase → backend)"}
+            </button>
+            <button
+              type="button"
+              className="text-xs font-semibold text-[#A3E635] hover:underline"
+              onClick={() => setWatchlistActionError(null)}
+            >
+              Đóng
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="grid grid-cols-3 gap-6">
         {/* Left col — Market table */}
         <div className="col-span-2">
@@ -99,7 +227,7 @@ export default function MarketsPage() {
             stocks={stocks ?? []}
             loading={isLoading}
             error={error ?? undefined}
-            watchedSymbols={watchedSymbols}
+            watchedKeys={watchedKeys}
             onToggleWatchlist={handleToggleWatchlist}
             onSymbolClick={(symbol) => router.push(`/markets/${symbol}`)}
           />

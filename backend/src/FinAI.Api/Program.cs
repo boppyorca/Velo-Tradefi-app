@@ -1,3 +1,4 @@
+using System.IdentityModel.Tokens.Jwt;
 using System.Net;
 using System.Net.Http;
 using System.Text;
@@ -7,23 +8,20 @@ using FinAI.Api.Services;
 using FinAI.Core.Interfaces;
 using FinAI.Infrastructure.Data;
 using FinAI.Infrastructure.Services;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 
-// Load .env file manually (simple implementation)
-// Priority: 1) worktree backend/.env, 2) original repo backend/.env, 3) current directory
+// Load .env from common locations (Windows / macOS / run from Api project or backend root)
 var possiblePaths = new[]
 {
-    // Worktree backend folder (takes precedence)
-    "/Users/hosynguyen/.cursor/worktrees/Velo-Tradefi-app/fvo/backend/.env",
-    // Original repo backend folder
-    "/Users/hosynguyen/Velo-Tradefi-app/backend/.env",
-    // Current working directory
     Path.Combine(Directory.GetCurrentDirectory(), ".env"),
-    // Relative to backend folder
     Path.Combine(Directory.GetCurrentDirectory(), "..", ".env"),
+    Path.Combine(Directory.GetCurrentDirectory(), "..", "..", ".env"),
+    Path.Combine(AppContext.BaseDirectory, ".env"),
+    Path.Combine(AppContext.BaseDirectory, "..", "..", "..", ".env"),
 };
 
 string? loadedPath = null;
@@ -103,28 +101,65 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 });
 
 // ── JWT Authentication ─────────────────────────────────────────────────────────
-// Supports both Supabase Auth JWT and custom JWT
-var useSupabaseAuth = !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("SUPABASE_URL"));
+// Supabase is configured: validate EITHER Supabase access tokens OR backend-issued API JWTs
+// (AuthController signs with JWT_SECRET_KEY — previously only Supabase parameters were registered → 401 on watchlist).
+var supabaseUrlEnv = Environment.GetEnvironmentVariable("SUPABASE_URL");
+var supabaseAnonEnv = Environment.GetEnvironmentVariable("SUPABASE_ANON_KEY");
+var useSupabaseAuth = !string.IsNullOrEmpty(supabaseUrlEnv) && !string.IsNullOrEmpty(supabaseAnonEnv);
 var jwtSecret = builder.Configuration["JWT_SECRET_KEY"]
+    ?? Environment.GetEnvironmentVariable("JWT_SECRET_KEY")
     ?? "VeloFinAI-SuperSecretKey-32chars-min!";
 
-builder.Services.AddAuthentication(options =>
-{
-    options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
-    options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
-})
-.AddJwtBearer(options =>
-{
-    options.RequireHttpsMetadata = !builder.Environment.IsDevelopment();
-    options.SaveToken = true;
+const string JwtSchemeSupabase = "JwtSupabase";
+const string JwtSchemeBackend = "JwtSchemeBackend";
+const string JwtSchemeSmart = "JwtSmart";
 
-    if (useSupabaseAuth)
+if (useSupabaseAuth)
+{
+    var supabaseUrl = supabaseUrlEnv!.TrimEnd('/');
+    var supabaseAnonKey = supabaseAnonEnv!;
+
+    Console.WriteLine($"JWT: dual schemes — Supabase issuer + backend API JWT ({jwtSecret.Length} char secret)");
+
+    builder.Services.AddAuthentication(options =>
     {
-        // ── Supabase Auth JWT Validation ──
-        var supabaseUrl = Environment.GetEnvironmentVariable("SUPABASE_URL")!;
-        var supabaseAnonKey = Environment.GetEnvironmentVariable("SUPABASE_ANON_KEY")!;
+        options.DefaultAuthenticateScheme = JwtSchemeSmart;
+        options.DefaultChallengeScheme = JwtSchemeSmart;
+    })
+    .AddPolicyScheme(JwtSchemeSmart, JwtSchemeSmart, options =>
+    {
+        options.ForwardDefaultSelector = ctx =>
+        {
+            var authHeader = ctx.Request.Headers.Authorization.ToString();
+            if (string.IsNullOrEmpty(authHeader) ||
+                !authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
+                return JwtSchemeBackend;
 
-        Console.WriteLine($"Using Supabase Auth: {supabaseUrl}");
+            var token = authHeader["Bearer ".Length..].Trim();
+            try
+            {
+                var handler = new JwtSecurityTokenHandler();
+                if (handler.CanReadToken(token))
+                {
+                    var jwt = handler.ReadJwtToken(token);
+                    var iss = jwt.Issuer ?? "";
+                    if (iss.Contains("supabase", StringComparison.OrdinalIgnoreCase))
+                        return JwtSchemeSupabase;
+                }
+            }
+            catch
+            {
+                // malformed → let backend scheme fail with 401
+            }
+
+            return JwtSchemeBackend;
+        };
+    })
+    .AddJwtBearer(JwtSchemeSupabase, options =>
+    {
+        options.RequireHttpsMetadata = !builder.Environment.IsDevelopment();
+        options.SaveToken = true;
+        Console.WriteLine($"  → {JwtSchemeSupabase}: issuer ~ {supabaseUrl}");
 
         options.TokenValidationParameters = new TokenValidationParameters
         {
@@ -135,18 +170,17 @@ builder.Services.AddAuthentication(options =>
             ValidateIssuerSigningKey = true,
             ValidateLifetime = true,
             ClockSkew = TimeSpan.FromMinutes(5),
-            IssuerSigningKeyResolver = (token, securityToken, kid, parameters) =>
+            IssuerSigningKeyResolver = (_, _, _, _) =>
             {
-                // Supabase uses HS256, key is the anon key
                 var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(supabaseAnonKey));
                 return new[] { key };
             }
         };
-    }
-    else
+    })
+    .AddJwtBearer(JwtSchemeBackend, options =>
     {
-        // ── Custom JWT Validation (Development) ──
-        Console.WriteLine("Using Custom JWT Auth (Development)");
+        options.RequireHttpsMetadata = !builder.Environment.IsDevelopment();
+        options.SaveToken = true;
         var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSecret));
         options.TokenValidationParameters = new TokenValidationParameters
         {
@@ -157,8 +191,32 @@ builder.Services.AddAuthentication(options =>
             ValidateLifetime = true,
             ClockSkew = TimeSpan.FromMinutes(5)
         };
-    }
-});
+    });
+}
+else
+{
+    Console.WriteLine("JWT: backend-only (HS256 + JWT_SECRET_KEY)");
+    builder.Services.AddAuthentication(options =>
+    {
+        options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+        options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+    })
+    .AddJwtBearer(options =>
+    {
+        options.RequireHttpsMetadata = !builder.Environment.IsDevelopment();
+        options.SaveToken = true;
+        var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSecret));
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuerSigningKey = true,
+            IssuerSigningKey = key,
+            ValidateIssuer = false,
+            ValidateAudience = false,
+            ValidateLifetime = true,
+            ClockSkew = TimeSpan.FromMinutes(5)
+        };
+    });
+}
 
 builder.Services.AddAuthorization();
 
@@ -168,27 +226,7 @@ builder.Services.AddHttpClient("SupabaseAuth", client =>
     client.Timeout = TimeSpan.FromSeconds(30);
 });
 
-// ── HTTP Client for Stock Data (Finnhub + AlphaVantage + Yahoo Finance) ─────────────
-// StockDataProvider cascades through multiple free APIs:
-// 1. Finnhub — real-time US quotes, 60 req/min free tier
-// 2. AlphaVantage — free 25 req/day, good quality
-// 3. Yahoo Finance — last resort (often requires cookies)
-// Set FINNHUB_API_KEY and ALPHAVANTAGE_API_KEY env vars to enable.
-builder.Services.AddHttpClient("StockData", client =>
-{
-    client.Timeout = TimeSpan.FromSeconds(20);
-    client.DefaultRequestHeaders.Add("User-Agent", "Mozilla/5.0 (compatible; FinAI/1.0)");
-    client.DefaultRequestHeaders.Add("Accept", "application/json, */*");
-    client.DefaultRequestHeaders.Add("Accept-Encoding", "gzip, deflate, br");
-})
-.ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
-{
-    AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate | DecompressionMethods.Brotli,
-    AllowAutoRedirect = true,
-    MaxAutomaticRedirections = 5,
-});
-
-// Legacy name — keep for backwards compat in case other code references it
+// ── HTTP Client for Stock/Yahoo Finance ─────────────────────────────────────────
 builder.Services.AddHttpClient("YahooFinance", client =>
 {
     client.Timeout = TimeSpan.FromSeconds(15);
@@ -241,9 +279,7 @@ builder.Services.AddCors(options =>
 });
 
 // ── SignalR ─────────────────────────────────────────────────────────────────
-// Configure SignalR with JWT authentication via query string access_token param.
-// SignalR clients use accessTokenFactory to send the JWT as a query param,
-// and ASP.NET Core will validate it automatically via OnMessageReceived.
+// Configure SignalR with Redis backplane for horizontal scaling (optional)
 builder.Services.AddSignalR(options =>
 {
     options.EnableDetailedErrors = builder.Environment.IsDevelopment();
@@ -254,35 +290,6 @@ builder.Services.AddSignalR(options =>
 {
     options.PayloadSerializerOptions.PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase;
 });
-
-// Configure JWT Bearer to read tokens from SignalR query string.
-// SignalR convention: clients pass the token as ?access_token=<jwt>
-if (useSupabaseAuth)
-{
-    builder.Services.Configure<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme, options =>
-    {
-        options.Events = new JwtBearerEvents
-        {
-            OnMessageReceived = context =>
-            {
-                var accessToken = context.Request.Query["access_token"];
-                var path = context.HttpContext.Request.Path;
-                if (!string.IsNullOrEmpty(accessToken) &&
-                    path.StartsWithSegments("/hubs"))
-                {
-                    context.Token = accessToken;
-                }
-                return Task.CompletedTask;
-            },
-            OnAuthenticationFailed = context =>
-            {
-                var logger2 = context.HttpContext.RequestServices.GetService<ILogger<Program>>();
-                logger2?.LogWarning("SignalR JWT auth failed: {Error}", context.Exception.Message);
-                return Task.CompletedTask;
-            }
-        };
-    });
-}
 
 // ── Redis Cache ───────────────────────────────────────────────────────────────
 var redisUrl = builder.Configuration["REDIS_URL"];
@@ -302,7 +309,7 @@ builder.Services.AddScoped<IWatchlistRepository, WatchlistRepository>();
 builder.Services.AddScoped<IStockService>(sp =>
 {
     var httpFactory = sp.GetRequiredService<IHttpClientFactory>();
-    var http = httpFactory.CreateClient("StockData"); // cascading: Finnhub → AlphaVantage → Yahoo
+    var http = httpFactory.CreateClient("YahooFinance");
     var logger = sp.GetRequiredService<ILogger<StockService>>();
     return new StockService(http, logger);
 });
@@ -342,27 +349,30 @@ builder.Services.AddSingleton<IRedisCacheService>(sp =>
 // ── SignalR Stock Broadcaster ─────────────────────────────────────────────────
 builder.Services.AddSingleton<IStockPriceBroadcaster, SignalRStockBroadcaster>();
 
-// ── Stock Polling Background Service ─────────────────────────────────────────
-builder.Services.AddHostedService<StockPollingBackgroundService>();
-
 // ── Web3 Signature Service ─────────────────────────────────────────────────────
 builder.Services.AddSingleton<IWeb3SignatureService, Web3SignatureService>();
+
+// ── SignalR Stock Broadcaster ─────────────────────────────────────────────────
+builder.Services.AddSingleton<IStockPriceBroadcaster, SignalRStockBroadcaster>();
 
 // ── Program ────────────────────────────────────────────────────────────────────
 var app = builder.Build();
 
-// Auto-apply migrations in development
+// Apply schema: PostgreSQL uses EF migrations; in-memory uses EnsureCreated
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
     try
     {
-        db.Database.EnsureCreated(); // Creates tables if they don't exist
+        if (usePostgres)
+            db.Database.Migrate();
+        else
+            db.Database.EnsureCreated();
     }
     catch (Exception ex)
     {
         var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
-        logger.LogWarning(ex, "Could not connect to database. Using in-memory fallback.");
+        logger.LogWarning(ex, "Could not connect or migrate database. Using in-memory fallback.");
     }
 }
 

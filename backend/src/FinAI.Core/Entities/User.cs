@@ -6,6 +6,7 @@ public class User
     public required string Email { get; set; }
     public required string PasswordHash { get; set; }
     public required string FullName { get; set; }
+    public string Role { get; set; } = "User";
     public string? WalletAddress { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime? UpdatedAt { get; set; }

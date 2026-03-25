@@ -1,6 +1,7 @@
 namespace FinAI.Infrastructure.Services;
 
 using System.Net.Http.Json;
+using System.Text;
 using System.Text.Json;
 using FinAI.Core.Interfaces;
 using FinAI.Core.Models;
@@ -11,7 +12,6 @@ public class PredictionService : IPredictionService
 {
     private readonly HttpClient _mlClient;
     private readonly ILogger<PredictionService> _logger;
-    private readonly string _mlServiceUrl;
 
     public PredictionService(
         HttpClient mlClient,
@@ -20,159 +20,63 @@ public class PredictionService : IPredictionService
     {
         _mlClient = mlClient;
         _logger = logger;
-        _mlServiceUrl = config["PYTHON_AI_SERVICE_URL"]?.TrimEnd('/') ?? "http://localhost:8000";
+        // Lấy URL từ biến môi trường, mặc định trỏ về máy AI của cậu
+        _mlClient.BaseAddress = new Uri(config["PYTHON_AI_SERVICE_URL"]?.TrimEnd('/') ?? "http://localhost:8000");
     }
 
-    public async Task<PredictionDto> GetPredictionAsync(string symbol, string model = "lstm")
+    public async Task<PredictionDto> GetPredictionAsync(string symbol, string model = "both")
     {
         var sym = symbol.ToUpperInvariant();
-        var days = 7;
-
+        
         try
         {
-            var mlUrl = $"{_mlServiceUrl}/predict/{sym}?model={model}&days={days}";
-            _logger.LogInformation("Calling ML service: {Url}", mlUrl);
+            _logger.LogInformation("[AI Core] Bắt đầu gọi model {Model} cho mã {Symbol} từ Python FastAPI...", model, sym);
 
-            var response = await _mlClient.GetAsync(mlUrl);
+            // Gọi GET sang API Python: /predict/{symbol}?model={model}&days=7
+            var requestUri = $"/predict/{sym}?model={model}&days=7";
+            var response = await _mlClient.GetAsync(requestUri);
+            response.EnsureSuccessStatusCode();
 
-            if (response.IsSuccessStatusCode)
-            {
-                var mlResult = await response.Content.ReadFromJsonAsync<MlPredictionResponse>();
-                if (mlResult is not null)
-                {
-                    _logger.LogInformation(
-                        "ML prediction received for {Symbol}: trend={Trend}, confidence={Confidence}",
-                        sym, mlResult.Trend, mlResult.Confidence);
+            var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+            var mlResult = await response.Content.ReadFromJsonAsync<MlPredictionResponse>(options);
+            
+            if (mlResult is null) throw new Exception("Python API trả về JSON rỗng.");
 
-                    return new PredictionDto(
-                        Symbol: mlResult.Symbol,
-                        Model: mlResult.Model,
-                        CurrentPrice: mlResult.CurrentPrice,
-                        Trend: mlResult.Trend,
-                        Confidence: mlResult.Confidence,
-                        Predictions: mlResult.Predictions.Select(p => new PredictionPointDto(
-                            Date: p.Date,
-                            PredictedPrice: p.PredictedPrice,
-                            Confidence: p.Confidence,
-                            UpperBound: p.UpperBound,
-                            LowerBound: p.LowerBound
-                        ))
-                    );
-                }
-            }
-            else
-            {
-                _logger.LogWarning(
-                    "ML service returned {Status} for {Symbol}. Falling back to heuristic.",
-                    response.StatusCode, sym);
-            }
-        }
-        catch (HttpRequestException ex)
-        {
-            _logger.LogWarning(ex, "ML service unreachable at {Url}. Falling back to heuristic.", _mlServiceUrl);
-        }
-        catch (TaskCanceledException ex)
-        {
-            _logger.LogWarning(ex, "ML service request timed out. Falling back to heuristic.");
+            _logger.LogInformation("[AI Core] Nhận kết quả THẬT từ Python: trend={Trend}, confidence={Confidence}", mlResult.Trend, mlResult.Confidence);
+
+            return new PredictionDto(
+                Symbol: sym,
+                Model: mlResult.Model, // Lấy đúng model trả về từ Python
+                CurrentPrice: mlResult.CurrentPrice,
+                Trend: mlResult.Trend,
+                Confidence: Math.Round(mlResult.Confidence, 2),
+                Predictions: mlResult.Predictions.Select(p => new PredictionPointDto(
+                    Date: p.Date,
+                    PredictedPrice: p.PredictedPrice,
+                    Confidence: p.Confidence,
+                    UpperBound: p.UpperBound,
+                    LowerBound: p.LowerBound
+                )).ToList()
+            );
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Unexpected error calling ML service for {Symbol}. Falling back.", sym);
+            // NẾU PYTHON CHẾT -> BÁO LỖI THẲNG MẶT, KHÔNG DÙNG HÀNG GIẢ!
+            _logger.LogError(ex, "[AI Core] Lỗi gọi AI Service. Hãy kiểm tra server Python localhost:8000. Chi tiết: {Message}", ex.Message);
+            throw new Exception($"Không thể kết nối đến Trí tuệ Nhân tạo thực. Vui lòng bật ML-Service.", ex);
         }
-
-        // ── Fallback: heuristic prediction ─────────────────────────────────────
-        return await GetHeuristicPredictionAsync(sym, model);
     }
 
     public Task<IEnumerable<PredictionDto>> GetPredictionHistoryAsync(string symbol, Guid? userId = null)
     {
-        var sym = symbol.ToUpperInvariant();
-        var rng = new Random(sym.GetHashCode());
-        var basePrice = GetBasePrice(sym);
-
-        var history = Enumerable.Range(0, 5).Select(i =>
-        {
-            var drift = (decimal)(rng.NextDouble() * 0.03 - 0.01);
-            var predicted = basePrice * (1 + drift);
-            var lastPred = basePrice * (1 + drift * 1.5m);
-            var diff = lastPred - basePrice;
-            var trend = diff > basePrice * 0.002m ? "bullish" :
-                        diff < -basePrice * 0.002m ? "bearish" : "neutral";
-            return new PredictionDto(
-                Symbol: sym,
-                Model: i % 2 == 0 ? "lstm" : "prophet",
-                CurrentPrice: predicted,
-                Trend: trend,
-                Confidence: 0.68 + rng.NextDouble() * 0.20,
-                Predictions: []
-            );
-        });
-
-        return Task.FromResult(history);
+        // Xóa sổ hàm Random. Trả về list rỗng nếu Python chưa hỗ trợ lưu lịch sử.
+        // Tương lai cậu có thể viết thêm 1 API GET history bên Python rồi gọi HTTP vào đây.
+        _logger.LogWarning("[AI Core] Tính năng Lịch sử hiện đang bảo trì để đồng bộ với Python AI.");
+        return Task.FromResult<IEnumerable<PredictionDto>>([]);
     }
-
-    private Task<PredictionDto> GetHeuristicPredictionAsync(string symbol, string model)
-    {
-        var basePrice = GetBasePrice(symbol);
-        var rng = new Random(symbol.GetHashCode());
-
-        // Trend simulation: slightly biased random walk
-        var trendBias = (decimal)(rng.NextDouble() * 0.01 - 0.003);
-
-        var predictions = Enumerable.Range(1, 7).Select(i =>
-        {
-            var drift = trendBias + (decimal)(rng.NextDouble() * 0.015 - 0.007);
-            var predictedPrice = basePrice * (1 + drift * i / 5m);
-            var confidence = Math.Max(0.45, 0.88 - i * 0.06);
-
-            return new PredictionPointDto(
-                Date: DateTime.UtcNow.Date.AddDays(i).ToString("yyyy-MM-dd"),
-                PredictedPrice: Math.Round(predictedPrice, 2),
-                Confidence: Math.Round(confidence, 2),
-                UpperBound: Math.Round(predictedPrice * 1.025m, 2),
-                LowerBound: Math.Round(predictedPrice * 0.975m, 2)
-            );
-        }).ToList();
-
-        var lastPred = predictions.Last().PredictedPrice;
-        var diff = lastPred - basePrice;
-        var trend = diff > basePrice * 0.002m ? "bullish" :
-                     diff < -basePrice * 0.002m ? "bearish" : "neutral";
-        var avgConf = predictions.Average(p => p.Confidence);
-
-        _logger.LogInformation(
-            "Heuristic prediction for {Symbol}: trend={Trend}, confidence={Confidence}",
-            symbol, trend, avgConf);
-
-        return Task.FromResult(new PredictionDto(
-            Symbol: symbol,
-            Model: model,
-            CurrentPrice: basePrice,
-            Trend: trend,
-            Confidence: Math.Round(avgConf, 2),
-            Predictions: predictions
-        ));
-    }
-
-    private static decimal GetBasePrice(string symbol) => symbol.ToUpperInvariant() switch
-    {
-        "AAPL" => 192.10m,
-        "NVDA" => 135.21m,
-        "TSLA" => 248.50m,
-        "MSFT" => 415.20m,
-        "AMZN" => 196.40m,
-        "GOOGL" => 175.00m,
-        "META" => 520.00m,
-        "VNM" => 78500m,
-        "VIC" => 42100m,
-        "HPG" => 28400m,
-        "FPT" => 134000m,
-        "SSI" => 23500m,
-        _ => 100m
-    };
 }
 
-// ── ML Service Response DTOs ─────────────────────────────────────────────────
+// ── ML Service Response DTOs (Hứng data từ Python) ──────────────────────────
 
 internal sealed class MlPredictionResponse
 {
